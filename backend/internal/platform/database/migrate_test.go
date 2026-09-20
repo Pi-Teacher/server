@@ -205,11 +205,13 @@ func tableDDL(t *testing.T, db *database.DB, table string) []string {
 		}
 		out = append(out, ddl)
 	default:
-		// MySQL/PG 都用 information_schema 检查外键约束, 而不是解析 DDL 文本.
+		// MySQL/PG 都用 information_schema.table_constraints 检查外键约束,
+		// 而不是解析 DDL 文本: 两者的表列相同 (table_name + constraint_type).
 		var refs []string
 		if err := db.DB.Raw(
-			`SELECT constraint_name FROM information_schema.referential_constraints
-			 WHERE constraint_schema = `+schemaExpr(db)+` AND table_name = ?`,
+			`SELECT constraint_name FROM information_schema.table_constraints
+			 WHERE constraint_schema = `+schemaExpr(db)+`
+			   AND table_name = ? AND constraint_type = 'FOREIGN KEY'`,
 			table).Scan(&refs).Error; err != nil {
 			t.Fatalf("query fk %s: %v", table, err)
 		}

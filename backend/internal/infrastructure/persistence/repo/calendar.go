@@ -30,13 +30,15 @@ func (r *CalendarRepository) WithTx(tx *gorm.DB) *CalendarRepository {
 // AddCreatedCards 原子递增某自然日的制卡计数, 行不存在时插入.
 //
 // 三方言兼容性: GORM 把 clause.OnConflict 翻译为 SQLite/PostgreSQL 的
-// ON CONFLICT DO UPDATE 和 MySQL 的 ON DUPLICATE KEY UPDATE;
-// 赋值右侧用裸列名引用已存在行, 三种数据库语义一致.
+// ON CONFLICT DO UPDATE 和 MySQL 的 ON DUPLICATE KEY UPDATE.
+// 赋值右侧必须用**表名限定**列引用: PostgreSQL 的 ON CONFLICT 目标行与
+// 隐式 excluded 行同名, 裸列名会被判定为 ambiguous; 加上表名前缀后
+// 三方言都能正确引用已存在行.
 func (r *CalendarRepository) AddCreatedCards(ctx context.Context, day time.Time, delta int64, now time.Time) error {
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "activity_date"}},
 		DoUpdates: clause.Assignments(map[string]any{
-			"created_cards": gorm.Expr("created_cards + ?", delta),
+			"created_cards": gorm.Expr("calendar.created_cards + ?", delta),
 			"updated_at":    now,
 		}),
 	}).Create(&model.Calendar{
@@ -54,7 +56,7 @@ func (r *CalendarRepository) AddReviewEvents(ctx context.Context, day time.Time,
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "activity_date"}},
 		DoUpdates: clause.Assignments(map[string]any{
-			"review_events": gorm.Expr("review_events + ?", delta),
+			"review_events": gorm.Expr("calendar.review_events + ?", delta),
 			"updated_at":    now,
 		}),
 	}).Create(&model.Calendar{

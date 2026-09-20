@@ -82,8 +82,9 @@ func (r *SettingsRepository) ApplyTx(ctx context.Context, updates []settings.Upd
 			DoUpdates: clause.Assignments(map[string]any{
 				"setting_value": encoded,
 				"value_type":    int16(valueType),
-				"version":       gorm.Expr("version + 1"),
-				"updated_at":    now,
+				// 表名限定: PostgreSQL 的 ON CONFLICT 裸列名与 excluded 歧义.
+				"version":    gorm.Expr("setting_keys.version + 1"),
+				"updated_at": now,
 			}),
 		}).Create(&row).Error; err != nil {
 			return err
