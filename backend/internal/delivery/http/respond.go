@@ -17,9 +17,6 @@ import (
 	"github.com/Pi-Teacher/server/internal/platform/logging"
 )
 
-// maxRequestBody 限制解码的 JSON 请求体大小, 防御异常客户端.
-const maxRequestBody = 1 << 20 // 1 MiB
-
 type ctxKey int
 
 const (
@@ -65,13 +62,14 @@ func writeError(w http.ResponseWriter, err error) {
 	}})
 }
 
-// decodeJSON 读取并解码 JSON 请求体. 禁止未知字段, 让客户端的拼写错误
-// 尽早暴露而不是被静默忽略; 超过上限的体按校验错误拒绝.
+// decodeJSON 直接解码完整 JSON 请求体. 接口需要鉴权且面向单用户部署,
+// 因此不设置统一请求体大小上限; 具体文本字段仍由应用服务执行长度校验.
+// 禁止未知字段, 让客户端的拼写错误尽早暴露而不是被静默忽略.
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 	if r.Body == nil {
 		return apperr.Validation("请求体不能为空")
 	}
-	dec := json.NewDecoder(io.LimitReader(r.Body, maxRequestBody))
+	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
 		if errors.Is(err, io.EOF) {

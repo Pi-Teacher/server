@@ -23,7 +23,6 @@ const (
 	CodeRebuilding          Code = "rebuilding"
 	CodeSimilarityDisabled  Code = "similarity_disabled"
 	CodeIdempotencyConflict Code = "idempotency_conflict"
-	CodePayloadTooLarge     Code = "payload_too_large"
 	CodeApprovalNotPending  Code = "approval_not_pending"
 	CodeRateLimited         Code = "rate_limited"
 	CodeEmbeddingUnavail    Code = "embedding_unavailable"
@@ -43,7 +42,6 @@ var statusFor = map[Code]int{
 	CodeRebuilding:          http.StatusConflict,
 	CodeSimilarityDisabled:  http.StatusConflict,
 	CodeIdempotencyConflict: http.StatusConflict,
-	CodePayloadTooLarge:     http.StatusRequestEntityTooLarge,
 	CodeApprovalNotPending:  http.StatusUnprocessableEntity,
 	CodeRateLimited:         http.StatusTooManyRequests,
 	CodeEmbeddingUnavail:    http.StatusServiceUnavailable,

@@ -70,10 +70,12 @@ func (s *TopicService) Create(ctx context.Context, input TopicInput) (*model.Top
 		return nil, err
 	}
 	var created *model.Topic
-	err = persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
-		var txErr error
-		created, txErr = s.createInTx(innerCtx, tx, name, description)
-		return txErr
+	err = SerializeKnowledgeNameWrite(ctx, func(lockedCtx context.Context) error {
+		return persistence.RunInTx(lockedCtx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
+			var txErr error
+			created, txErr = s.createInTx(innerCtx, tx, name, description)
+			return txErr
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -130,13 +132,15 @@ func (s *TopicService) BatchCreate(ctx context.Context, inputs []TopicInput) ([]
 		items[i] = validated{name: name, description: description}
 	}
 	created := make([]model.Topic, 0, len(items))
-	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item validated) error {
-		topic, err := s.createInTx(innerCtx, tx, item.name, item.description)
-		if err != nil {
-			return err
-		}
-		created = append(created, *topic)
-		return nil
+	if err := SerializeKnowledgeNameWrite(ctx, func(lockedCtx context.Context) error {
+		return runBatch(lockedCtx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item validated) error {
+			topic, err := s.createInTx(innerCtx, tx, item.name, item.description)
+			if err != nil {
+				return err
+			}
+			created = append(created, *topic)
+			return nil
+		})
 	}); err != nil {
 		return nil, err
 	}
@@ -195,55 +199,66 @@ func (s *TopicService) Update(ctx context.Context, id, expectedVersion int64, pa
 		description = &v
 	}
 	var updated *repo.TopicRow
-	err := persistence.RunInTx(ctx, s.db, func(_ context.Context, tx *gorm.DB) error {
-		topics := s.topics.WithTx(tx)
-		topic, err := topics.FindActive(ctx, id)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return apperr.NotFound("Topic 不存在")
-			}
-			return err
-		}
-		fields := map[string]any{}
-		if name != nil && *name != topic.Name {
-			if exists, err := topics.ExistsActiveByName(ctx, *name, id); err != nil {
-				return err
-			} else if exists {
-				return apperr.Conflict(apperr.CodeNameConflict, "同名 Topic 已存在")
-			}
-			deleted, err := topics.DeleteTrashedByName(ctx, *name)
+	execute := func(execCtx context.Context) error {
+		return persistence.RunInTx(execCtx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
+			topics := s.topics.WithTx(tx)
+			topic, err := topics.FindActive(innerCtx, id)
 			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return apperr.NotFound("Topic 不存在")
+				}
 				return err
 			}
-			if err := s.stale.mark(ctx, tx, model.EntityTopic, deleted, staleReasonOverwritten, s.now()); err != nil {
-				return err
-			}
-			fields["name"] = *name
-		}
-		if description != nil && *description != topic.Description {
-			fields["description"] = *description
-		}
-		if len(fields) == 0 {
-			count, err := s.cards.CountActiveByTopic(ctx, id)
-			if err != nil {
-				return err
-			}
-			updated = &repo.TopicRow{Topic: *topic, CardCount: count}
-			return nil
-		}
-		if err := persistence.UpdateOptimistic(tx, &model.Topic{}, id, expectedVersion, fields); err != nil {
-			if errors.Is(err, persistence.ErrVersionConflict) {
+			if topic.Version != expectedVersion {
 				return versionConflict("Topic", topic.Version)
 			}
-			return err
-		}
-		row, err := s.readRow(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		updated = row
-		return nil
-	})
+			fields := map[string]any{}
+			if name != nil && *name != topic.Name {
+				if exists, err := topics.ExistsActiveByName(innerCtx, *name, id); err != nil {
+					return err
+				} else if exists {
+					return apperr.Conflict(apperr.CodeNameConflict, "同名 Topic 已存在")
+				}
+				deleted, err := topics.DeleteTrashedByName(innerCtx, *name)
+				if err != nil {
+					return err
+				}
+				if err := s.stale.mark(innerCtx, tx, model.EntityTopic, deleted, staleReasonOverwritten, s.now()); err != nil {
+					return err
+				}
+				fields["name"] = *name
+			}
+			if description != nil && *description != topic.Description {
+				fields["description"] = *description
+			}
+			if len(fields) == 0 {
+				count, err := s.cards.WithTx(tx).CountActiveByTopic(innerCtx, id)
+				if err != nil {
+					return err
+				}
+				updated = &repo.TopicRow{Topic: *topic, CardCount: count}
+				return nil
+			}
+			if err := persistence.UpdateOptimistic(tx, &model.Topic{}, id, expectedVersion, fields); err != nil {
+				if errors.Is(err, persistence.ErrVersionConflict) {
+					return versionConflict("Topic", topic.Version)
+				}
+				return err
+			}
+			row, err := s.readRow(innerCtx, tx, id)
+			if err != nil {
+				return err
+			}
+			updated = row
+			return nil
+		})
+	}
+	var err error
+	if name != nil {
+		err = SerializeKnowledgeNameWrite(ctx, execute)
+	} else {
+		err = execute(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +309,10 @@ func (s *TopicService) BatchTrash(ctx context.Context, items []VersionedItem, in
 	return trashedCount, affectedCards, nil
 }
 
-// trashInTx 是 Trash 的事务内实现, 供单个与批量回收共用.
+// trashInTx 是 Trash 的事务内实现, 供单个、批量和审批回收共用.
+// includeCards=true 时按事务执行时的实时关联集合回收全部 Card. 审批等待期间
+// 新加入 Topic 的 Card 也会被处理: 用户批准删除该 Topic 代表接受删除其当前内容.
+// approval_target 中的 affected_card 仅用于发现提案等待期间已知 Card 的版本变化.
 // 返回受影响关联卡数量.
 func (s *TopicService) trashInTx(ctx context.Context, tx *gorm.DB, id, expectedVersion int64, includeCards bool) (int64, error) {
 	topics := s.topics.WithTx(tx)
@@ -389,33 +407,35 @@ func (s *TopicService) ListTrashed(ctx context.Context, page, pageSize int) ([]m
 // 返回 name_conflict, 由用户决定如何处理.
 func (s *TopicService) Restore(ctx context.Context, id, expectedVersion int64) (*model.Topic, error) {
 	var restored *model.Topic
-	err := persistence.RunInTx(ctx, s.db, func(_ context.Context, tx *gorm.DB) error {
-		topics := s.topics.WithTx(tx)
-		topic, err := topics.FindTrashed(ctx, id)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return apperr.NotFound("回收站中不存在该 Topic")
+	err := SerializeKnowledgeNameWrite(ctx, func(lockedCtx context.Context) error {
+		return persistence.RunInTx(lockedCtx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
+			topics := s.topics.WithTx(tx)
+			topic, err := topics.FindTrashed(innerCtx, id)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return apperr.NotFound("回收站中不存在该 Topic")
+				}
+				return err
 			}
+			if topic.Version != expectedVersion {
+				return versionConflict("Topic", topic.Version)
+			}
+			if exists, err := topics.ExistsActiveByName(innerCtx, topic.Name, 0); err != nil {
+				return err
+			} else if exists {
+				return apperr.Conflict(apperr.CodeNameConflict, "同名 Topic 已存在")
+			}
+			ok, err := topics.Restore(innerCtx, id, expectedVersion, s.now())
+			if err != nil {
+				return err
+			}
+			if !ok {
+				// 读取后被并发修改, 按版本冲突处理.
+				return versionConflict("Topic", topic.Version)
+			}
+			restored, err = topics.FindActive(innerCtx, id)
 			return err
-		}
-		if topic.Version != expectedVersion {
-			return versionConflict("Topic", topic.Version)
-		}
-		if exists, err := topics.ExistsActiveByName(ctx, topic.Name, 0); err != nil {
-			return err
-		} else if exists {
-			return apperr.Conflict(apperr.CodeNameConflict, "同名 Topic 已存在")
-		}
-		ok, err := topics.Restore(ctx, id, expectedVersion, s.now())
-		if err != nil {
-			return err
-		}
-		if !ok {
-			// 读取后被并发修改, 按版本冲突处理.
-			return versionConflict("Topic", topic.Version)
-		}
-		restored, err = topics.FindActive(ctx, id)
-		return err
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -426,13 +446,15 @@ func (s *TopicService) Restore(ctx context.Context, id, expectedVersion int64) (
 // BatchRestore 在单个事务中整批恢复回收站 Topic.
 func (s *TopicService) BatchRestore(ctx context.Context, items []VersionedItem) ([]model.Topic, error) {
 	restored := make([]model.Topic, 0, len(items))
-	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item VersionedItem) error {
-		topic, err := s.restoreInTx(innerCtx, tx, item.ID, item.ExpectedVersion)
-		if err != nil {
-			return err
-		}
-		restored = append(restored, *topic)
-		return nil
+	if err := SerializeKnowledgeNameWrite(ctx, func(lockedCtx context.Context) error {
+		return runBatch(lockedCtx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item VersionedItem) error {
+			topic, err := s.restoreInTx(innerCtx, tx, item.ID, item.ExpectedVersion)
+			if err != nil {
+				return err
+			}
+			restored = append(restored, *topic)
+			return nil
+		})
 	}); err != nil {
 		return nil, err
 	}

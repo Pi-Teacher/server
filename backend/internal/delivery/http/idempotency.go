@@ -7,14 +7,12 @@ import (
 	"encoding/hex"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/Pi-Teacher/server/internal/application/apperr"
 	"github.com/Pi-Teacher/server/internal/application/appsvc"
 	"github.com/Pi-Teacher/server/internal/infrastructure/persistence/model"
 )
-
-// maxIdempotencyBody 是幂等响应体上限, 与数据库设计 4.15 一致.
-const maxIdempotencyBody = 1 << 20 // 1 MiB
 
 // ctxKeyRawBody 携带本请求已读入内存的原始请求体, 供提案构建多次解码.
 const ctxKeyRawBody ctxKey = 100
@@ -55,7 +53,7 @@ func (s *Server) withIdempotency(next http.Handler) http.Handler {
 			writeError(w, apperr.Unauthorized("缺少 API Key"))
 			return
 		}
-		raw, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBody))
+		raw, err := io.ReadAll(r.Body)
 		if err != nil {
 			writeError(w, apperr.Wrap(apperr.CodeInternal, "读取请求体失败", err))
 			return
@@ -79,20 +77,48 @@ func (s *Server) withIdempotency(next http.Handler) http.Handler {
 		}
 
 		buf := &bufferedResponse{header: make(http.Header)}
-		status, body, err := s.Idempotency.Execute(
-			r.Context(), apiKey.ID, key, r.Method, path, hash,
-			func(execCtx context.Context) (int, []byte) {
-				buf.reset()
-				next.ServeHTTP(buf, r.WithContext(execCtx))
-				return buf.statusOrOK(), buf.body.Bytes()
-			},
-		)
+		var status int
+		var body []byte
+		execute := func(execRoot context.Context) error {
+			var executeErr error
+			status, body, executeErr = s.Idempotency.Execute(
+				execRoot, apiKey.ID, key, r.Method, path, hash,
+				func(execCtx context.Context) (int, []byte) {
+					buf.reset()
+					next.ServeHTTP(buf, r.WithContext(execCtx))
+					return buf.statusOrOK(), buf.body.Bytes()
+				},
+			)
+			return executeErr
+		}
+		if requiresKnowledgeNameWrite(r.Method, path) {
+			err = appsvc.SerializeKnowledgeNameWrite(r.Context(), execute)
+		} else {
+			err = execute(r.Context())
+		}
 		if err != nil {
 			writeError(w, err)
 			return
 		}
 		writeBuffered(w, status, body, buf.header)
 	})
+}
+
+// requiresKnowledgeNameWrite 判断 CLI 请求是否会修改 Topic/Glossary 名称空间.
+// 这些请求必须在幂等事务开启前取得进程锁, 保持统一的锁顺序.
+func requiresKnowledgeNameWrite(method, path string) bool {
+	resource := strings.TrimPrefix(path, "/api/cli/")
+	switch method {
+	case http.MethodPost:
+		return resource == "topics" || resource == "topics/batch-create" ||
+			resource == "glossary" || resource == "glossary/batch-create" ||
+			(strings.HasPrefix(resource, "trash/topics/") && strings.HasSuffix(resource, "/restore")) ||
+			(strings.HasPrefix(resource, "trash/glossary/") && strings.HasSuffix(resource, "/restore"))
+	case http.MethodPatch:
+		return strings.HasPrefix(resource, "topics/") || strings.HasPrefix(resource, "glossary/")
+	default:
+		return false
+	}
 }
 
 // writeReplay 回放已完成的响应.

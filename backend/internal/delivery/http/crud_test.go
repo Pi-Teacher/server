@@ -479,6 +479,81 @@ func TestTopicNameConflictAndOverwrite(t *testing.T) {
 	}
 }
 
+// TestKnowledgeNoOpPatchChecksVersion 验证即使 PATCH 没有实际字段变化,
+// Topic/Glossary 也必须先校验 expected_version, 不能绕过乐观锁.
+func TestKnowledgeNoOpPatchChecksVersion(t *testing.T) {
+	ts := newTestServer(t)
+	csrf := ts.login()
+
+	resp := ts.do(http.MethodPost, "/api/web/topics", map[string]any{
+		"name": "no-op topic", "description": "v1",
+	}, map[string]string{"X-CSRF-Token": csrf})
+	var topic struct {
+		ID      int64 `json:"id"`
+		Version int64 `json:"version"`
+	}
+	decodeBody(t, resp, &topic)
+	resp = ts.do(http.MethodPatch, fmt.Sprintf("/api/web/topics/%d", topic.ID), map[string]any{
+		"expected_version": topic.Version, "description": "v2",
+	}, map[string]string{"X-CSRF-Token": csrf})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("update topic status = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+	resp = ts.do(http.MethodPatch, fmt.Sprintf("/api/web/topics/%d", topic.ID), map[string]any{
+		"expected_version": topic.Version, "description": "v2",
+	}, map[string]string{"X-CSRF-Token": csrf})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("stale no-op topic status = %d, want 409", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp = ts.do(http.MethodPost, "/api/web/glossary", map[string]any{
+		"term": "no-op glossary", "definition": "v1",
+	}, map[string]string{"X-CSRF-Token": csrf})
+	var glossary struct {
+		ID      int64 `json:"id"`
+		Version int64 `json:"version"`
+	}
+	decodeBody(t, resp, &glossary)
+	resp = ts.do(http.MethodPatch, fmt.Sprintf("/api/web/glossary/%d", glossary.ID), map[string]any{
+		"expected_version": glossary.Version, "definition": "v2",
+	}, map[string]string{"X-CSRF-Token": csrf})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("update glossary status = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+	resp = ts.do(http.MethodPatch, fmt.Sprintf("/api/web/glossary/%d", glossary.ID), map[string]any{
+		"expected_version": glossary.Version, "definition": "v2",
+	}, map[string]string{"X-CSRF-Token": csrf})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("stale no-op glossary status = %d, want 409", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+// TestAuthenticatedRequestBodyHasNoGlobalLimit 验证已鉴权 JSON 请求不受统一
+// 1 MiB 上限限制. 额外空间不改变业务 payload, 便于只验证传输层行为.
+func TestAuthenticatedRequestBodyHasNoGlobalLimit(t *testing.T) {
+	ts := newTestServer(t)
+	csrf := ts.login()
+	body := append([]byte(`{"name":"large authenticated body"}`), bytes.Repeat([]byte(" "), (1<<20)+1)...)
+	req, err := http.NewRequest(http.MethodPost, ts.srv.URL+"/api/web/topics", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-CSRF-Token", csrf)
+	resp, err := ts.client.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("large authenticated body status = %d, want 201", resp.StatusCode)
+	}
+}
+
 // TestTopicTrashIncludeCards 验证 Topic 回收的关联卡两种处理与预览.
 func TestTopicTrashIncludeCards(t *testing.T) {
 	ts := newTestServer(t)

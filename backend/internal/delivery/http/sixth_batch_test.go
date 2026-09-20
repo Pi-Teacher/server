@@ -375,6 +375,62 @@ func TestSixthBatchSystemInfo(t *testing.T) {
 
 // --- 并发测试 (第六批 6.4, 仅 SQLite) ---
 
+// TestConcurrentKnowledgeNameCreate 验证单实例名称写锁使并发同名创建
+// 严格串行化: Topic 和 Glossary 都只能成功创建一行.
+func TestConcurrentKnowledgeNameCreate(t *testing.T) {
+	ts := newTestServer(t)
+	csrf := ts.login()
+
+	tests := []struct {
+		name string
+		path string
+		body map[string]any
+		list string
+	}{
+		{name: "topic", path: "/api/web/topics", body: map[string]any{"name": "并发同名"}, list: "/api/web/topics?q=并发同名"},
+		{name: "glossary", path: "/api/web/glossary", body: map[string]any{"term": "并发术语", "definition": "定义"}, list: "/api/web/glossary?q=并发术语"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			const workers = 8
+			var wg sync.WaitGroup
+			var mu sync.Mutex
+			created, conflict, other := 0, 0, 0
+			for range workers {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					resp := ts.do(http.MethodPost, tc.path, tc.body,
+						map[string]string{"X-CSRF-Token": csrf})
+					mu.Lock()
+					switch resp.StatusCode {
+					case http.StatusCreated:
+						created++
+					case http.StatusConflict:
+						conflict++
+					default:
+						other++
+					}
+					mu.Unlock()
+					resp.Body.Close()
+				}()
+			}
+			wg.Wait()
+			if created != 1 || conflict != workers-1 || other != 0 {
+				t.Fatalf("created=%d conflict=%d other=%d", created, conflict, other)
+			}
+			resp := ts.do(http.MethodGet, tc.list, nil, nil)
+			var list struct {
+				Total int64 `json:"total"`
+			}
+			decodeBody(t, resp, &list)
+			if list.Total != 1 {
+				t.Fatalf("total = %d, want 1", list.Total)
+			}
+		})
+	}
+}
+
 // TestSixthBatchConcurrentOptimisticLock 验证并发写入同一 Topic 时,
 // 恰好一个成功, 其余得到 409 version_conflict, 不出现丢失更新.
 func TestSixthBatchConcurrentOptimisticLock(t *testing.T) {

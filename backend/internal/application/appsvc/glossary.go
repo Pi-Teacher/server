@@ -59,10 +59,12 @@ func (s *GlossaryService) Create(ctx context.Context, input GlossaryInput) (*mod
 		return nil, err
 	}
 	var created *model.Glossary
-	err = persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
-		var txErr error
-		created, txErr = s.createInTx(innerCtx, tx, term, definition)
-		return txErr
+	err = SerializeKnowledgeNameWrite(ctx, func(lockedCtx context.Context) error {
+		return persistence.RunInTx(lockedCtx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
+			var txErr error
+			created, txErr = s.createInTx(innerCtx, tx, term, definition)
+			return txErr
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -119,13 +121,15 @@ func (s *GlossaryService) BatchCreate(ctx context.Context, inputs []GlossaryInpu
 		items[i] = validated{term: term, definition: definition}
 	}
 	created := make([]model.Glossary, 0, len(items))
-	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item validated) error {
-		g, err := s.createInTx(innerCtx, tx, item.term, item.definition)
-		if err != nil {
-			return err
-		}
-		created = append(created, *g)
-		return nil
+	if err := SerializeKnowledgeNameWrite(ctx, func(lockedCtx context.Context) error {
+		return runBatch(lockedCtx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item validated) error {
+			g, err := s.createInTx(innerCtx, tx, item.term, item.definition)
+			if err != nil {
+				return err
+			}
+			created = append(created, *g)
+			return nil
+		})
 	}); err != nil {
 		return nil, err
 	}
@@ -179,47 +183,58 @@ func (s *GlossaryService) Update(ctx context.Context, id, expectedVersion int64,
 		definition = &v
 	}
 	var updated *model.Glossary
-	err := persistence.RunInTx(ctx, s.db, func(_ context.Context, tx *gorm.DB) error {
-		glossaries := s.glossaries.WithTx(tx)
-		g, err := glossaries.FindActive(ctx, id)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return apperr.NotFound("Glossary 不存在")
-			}
-			return err
-		}
-		fields := map[string]any{}
-		if term != nil && *term != g.Term {
-			if exists, err := glossaries.ExistsActiveByTerm(ctx, *term, id); err != nil {
-				return err
-			} else if exists {
-				return apperr.Conflict(apperr.CodeNameConflict, "同名 Glossary 已存在")
-			}
-			deleted, err := glossaries.DeleteTrashedByTerm(ctx, *term)
+	execute := func(execCtx context.Context) error {
+		return persistence.RunInTx(execCtx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
+			glossaries := s.glossaries.WithTx(tx)
+			g, err := glossaries.FindActive(innerCtx, id)
 			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return apperr.NotFound("Glossary 不存在")
+				}
 				return err
 			}
-			if err := s.stale.mark(ctx, tx, model.EntityGlossary, deleted, staleReasonOverwritten, s.now()); err != nil {
-				return err
-			}
-			fields["term"] = *term
-		}
-		if definition != nil && *definition != g.Definition {
-			fields["definition"] = *definition
-		}
-		if len(fields) == 0 {
-			updated = g
-			return nil
-		}
-		if err := persistence.UpdateOptimistic(tx, &model.Glossary{}, id, expectedVersion, fields); err != nil {
-			if errors.Is(err, persistence.ErrVersionConflict) {
+			if g.Version != expectedVersion {
 				return versionConflict("Glossary", g.Version)
 			}
+			fields := map[string]any{}
+			if term != nil && *term != g.Term {
+				if exists, err := glossaries.ExistsActiveByTerm(innerCtx, *term, id); err != nil {
+					return err
+				} else if exists {
+					return apperr.Conflict(apperr.CodeNameConflict, "同名 Glossary 已存在")
+				}
+				deleted, err := glossaries.DeleteTrashedByTerm(innerCtx, *term)
+				if err != nil {
+					return err
+				}
+				if err := s.stale.mark(innerCtx, tx, model.EntityGlossary, deleted, staleReasonOverwritten, s.now()); err != nil {
+					return err
+				}
+				fields["term"] = *term
+			}
+			if definition != nil && *definition != g.Definition {
+				fields["definition"] = *definition
+			}
+			if len(fields) == 0 {
+				updated = g
+				return nil
+			}
+			if err := persistence.UpdateOptimistic(tx, &model.Glossary{}, id, expectedVersion, fields); err != nil {
+				if errors.Is(err, persistence.ErrVersionConflict) {
+					return versionConflict("Glossary", g.Version)
+				}
+				return err
+			}
+			updated, err = glossaries.FindActive(innerCtx, id)
 			return err
-		}
-		updated, err = glossaries.FindActive(ctx, id)
-		return err
-	})
+		})
+	}
+	var err error
+	if term != nil {
+		err = SerializeKnowledgeNameWrite(ctx, execute)
+	} else {
+		err = execute(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -278,10 +293,12 @@ func (s *GlossaryService) ListTrashed(ctx context.Context, page, pageSize int) (
 // Restore 把回收站 Glossary 恢复为正常对象, 同名冲突返回 name_conflict.
 func (s *GlossaryService) Restore(ctx context.Context, id, expectedVersion int64) (*model.Glossary, error) {
 	var restored *model.Glossary
-	err := persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
-		var txErr error
-		restored, txErr = s.restoreInTx(innerCtx, tx, id, expectedVersion)
-		return txErr
+	err := SerializeKnowledgeNameWrite(ctx, func(lockedCtx context.Context) error {
+		return persistence.RunInTx(lockedCtx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
+			var txErr error
+			restored, txErr = s.restoreInTx(innerCtx, tx, id, expectedVersion)
+			return txErr
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -320,13 +337,15 @@ func (s *GlossaryService) restoreInTx(ctx context.Context, tx *gorm.DB, id, expe
 // BatchRestore 在单个事务中整批恢复回收站 Glossary.
 func (s *GlossaryService) BatchRestore(ctx context.Context, items []VersionedItem) ([]model.Glossary, error) {
 	restored := make([]model.Glossary, 0, len(items))
-	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item VersionedItem) error {
-		g, err := s.restoreInTx(innerCtx, tx, item.ID, item.ExpectedVersion)
-		if err != nil {
-			return err
-		}
-		restored = append(restored, *g)
-		return nil
+	if err := SerializeKnowledgeNameWrite(ctx, func(lockedCtx context.Context) error {
+		return runBatch(lockedCtx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item VersionedItem) error {
+			g, err := s.restoreInTx(innerCtx, tx, item.ID, item.ExpectedVersion)
+			if err != nil {
+				return err
+			}
+			restored = append(restored, *g)
+			return nil
+		})
 	}); err != nil {
 		return nil, err
 	}

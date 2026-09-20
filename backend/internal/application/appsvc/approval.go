@@ -203,44 +203,72 @@ func (s *ApprovalService) List(
 // 领域事务失败 (如同名占用) 会向上返回错误, 请求保持 pending.
 func (s *ApprovalService) Approve(ctx context.Context, id int64, override *json.RawMessage) (*ApprovalDetail, error) {
 	var detail *ApprovalDetail
-	err := persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
-		req, err := s.loadPending(innerCtx, tx, id)
-		if err != nil {
+	execute := func(execCtx context.Context) error {
+		return persistence.RunInTx(execCtx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
+			req, err := s.loadPending(innerCtx, tx, id)
+			if err != nil {
+				return err
+			}
+			targets, err := s.approvals.WithTx(tx).ListTargets(innerCtx, id)
+			if err != nil {
+				return err
+			}
+			reason, err := s.validateTargets(innerCtx, tx, req.Operation, targets)
+			if err != nil {
+				return err
+			}
+			if reason != "" {
+				detail, err = s.markResult(innerCtx, tx, id, model.ApprovalStale, reason, nil)
+				return err
+			}
+			payload := req.OriginalPayload
+			if override != nil {
+				payload = string(*override)
+			}
+			// 先把请求置为 approved 终态, 再执行领域修改: 回收/删除类操作会
+			// 联动把依赖该对象的 pending 请求标 stale, 若不先落终态会误伤
+			// 正在批准的自己. 领域修改失败时整个事务回滚, 状态恢复 pending.
+			if err := s.markProcessed(innerCtx, tx, id, model.ApprovalApproved, "", &payload); err != nil {
+				return err
+			}
+			// 用 innerCtx 执行领域修改, 让下层服务复用本事务.
+			if err := s.execute(innerCtx, req.Operation, targets, payload); err != nil {
+				return err
+			}
+			detail, err = s.readDetail(innerCtx, tx, id)
 			return err
+		})
+	}
+	// 名称写操作必须在审批事务开启前取得进程锁. 先用事务外只读查询
+	// 判断操作类型, 真正执行时仍会在事务内重新校验 pending 状态与 targets.
+	req, err := s.approvals.Find(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperr.NotFound("审批请求不存在")
 		}
-		targets, err := s.approvals.WithTx(tx).ListTargets(innerCtx, id)
-		if err != nil {
-			return err
-		}
-		reason, err := s.validateTargets(innerCtx, tx, req.Operation, targets)
-		if err != nil {
-			return err
-		}
-		if reason != "" {
-			detail, err = s.markResult(innerCtx, tx, id, model.ApprovalStale, reason, nil)
-			return err
-		}
-		payload := req.OriginalPayload
-		if override != nil {
-			payload = string(*override)
-		}
-		// 先把请求置为 approved 终态, 再执行领域修改: 回收/删除类操作会
-		// 联动把依赖该对象的 pending 请求标 stale, 若不先落终态会误伤
-		// 正在批准的自己. 领域修改失败时整个事务回滚, 状态恢复 pending.
-		if err := s.markProcessed(innerCtx, tx, id, model.ApprovalApproved, "", &payload); err != nil {
-			return err
-		}
-		// 用 innerCtx 执行领域修改, 让下层服务复用本事务.
-		if err := s.execute(innerCtx, req.Operation, targets, payload); err != nil {
-			return err
-		}
-		detail, err = s.readDetail(innerCtx, tx, id)
-		return err
-	})
+		return nil, err
+	}
+	if approvalOperationWritesKnowledgeName(req.Operation) {
+		err = SerializeKnowledgeNameWrite(ctx, execute)
+	} else {
+		err = execute(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return detail, nil
+}
+
+// approvalOperationWritesKnowledgeName 判断审批操作是否会创建、改名或恢复
+// Topic/Glossary. 仅这些操作需要占用名称写锁, 避免无关审批相互阻塞.
+func approvalOperationWritesKnowledgeName(op int16) bool {
+	switch op {
+	case model.OpTopicCreate, model.OpTopicUpdate, model.OpTopicRestore,
+		model.OpGlossaryCreate, model.OpGlossaryUpdate, model.OpGlossaryRestore:
+		return true
+	default:
+		return false
+	}
 }
 
 // Reject 拒绝一条 pending 请求, reason 可为空.
@@ -576,6 +604,9 @@ func (s *ApprovalService) execute(ctx context.Context, op int16, targets []model
 		_, err := s.topicSvc.Update(ctx, primaryID, primaryVersion, p.ToPatch())
 		return err
 	case model.OpTopicTrash:
+		// Topic 连带回收采用批准时现状: include_cards=true 表示用户批准
+		// 删除该 Topic 及其当前全部关联 Card, 包括审批等待期间新增的 Card.
+		// affected_card target 仅用于让提案时已知 Card 的变更触发 stale.
 		var p TopicTrashPayload
 		if err := decodeProposalPayload(payload, &p); err != nil {
 			return err

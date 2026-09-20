@@ -77,8 +77,9 @@ func (s *ApprovalService) prepare(
 		}
 		targets := []model.ApprovalTarget{target}
 		if p.Include() {
-			// 连带回收会改变每张关联卡, 全部登记为 affected_card:
-			// 任一卡在批准前被改动, 整条请求按文档语义转 stale.
+			// 提案时已知的关联卡登记为 affected_card: 任一卡在批准前被改动,
+			// 整条请求转 stale. 批准执行仍采用 Topic 的实时关联集合, 因为
+			// 用户批准删除该 Topic 代表接受删除其当时的全部当前内容.
 			linked, err := s.cards.WithTx(tx).ListActiveByTopic(ctx, *spec.EntityID)
 			if err != nil {
 				return nil, err
