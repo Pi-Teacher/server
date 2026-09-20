@@ -27,6 +27,8 @@ type RouterConfig struct {
 	Idempotency  *appsvc.IdempotencyService
 	Settings     *appsvc.SettingsService
 	Embedding    *appsvc.EmbeddingService
+	UserProfile  *appsvc.UserProfileService
+	Logs         *appsvc.LogService
 	Logger       *slog.Logger
 	DBDriver     string
 	StartedAt    time.Time
@@ -51,6 +53,8 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		Idempotency: cfg.Idempotency,
 		Settings:    cfg.Settings,
 		Embedding:   cfg.Embedding,
+		UserProfile: cfg.UserProfile,
+		Logs:        cfg.Logs,
 		Logger:      cfg.Logger,
 	}
 	if len(cfg.AllowOrigins) > 0 {
@@ -82,6 +86,13 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	// --- 设置 (仅 Web) ---
 	mux.Handle("GET /api/web/settings", s.requireWebSession(http.HandlerFunc(s.handleGetSettings)))
 	mux.Handle("PATCH /api/web/settings", s.requireWebSession(http.HandlerFunc(s.handlePatchSettings)))
+
+	// --- 用户画像 (Web 与 CLI 同构; CLI PUT 包幂等, 不挂审批) ---
+	s.registerCRUD(mux, "user-profile", "GET", "", s.handleGetUserProfile, cliWriteSpec{})
+	s.registerCRUD(mux, "user-profile", "PUT", "", s.handlePutUserProfile, cliWriteSpec{})
+
+	// --- 日志查询 (仅 Web) ---
+	mux.Handle("GET /api/web/logs", s.requireWebSession(http.HandlerFunc(s.handleListLogs)))
 
 	// --- 审批 (Web 处理; CLI 仅查看自己提交的) ---
 	mux.Handle("GET /api/web/approvals", s.requireWebSession(http.HandlerFunc(s.handleListApprovals)))

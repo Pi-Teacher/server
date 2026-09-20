@@ -4,6 +4,8 @@ package repo
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"time"
 
 	"gorm.io/gorm"
@@ -130,14 +132,32 @@ func (r *SettingsRepository) EnsureDefaults(ctx context.Context) error {
 }
 
 // AppLogWriter 把 app_log 批量写入数据库, 是日志 sink 的落库端.
+//
+// 裁剪不用独立定时器: 它内存累计已落库行数, 每满 pruneInterval 行触发一次
+// PruneAppLogs, 把定时查库的读压力降到极低. 仅有 sink 单 goroutine 调用,
+// 无需加锁.
 type AppLogWriter struct {
 	db *gorm.DB
+	// pruneParams 返回当前的保留天数与最大行数, 为 nil 时跳过裁剪.
+	pruneParams func() (retentionDays, maxRows int64)
+	// inserted 是自上次裁剪以来累计落库的行数.
+	inserted int64
 }
+
+// pruneInterval 是触发一次裁剪所需的累计落库行数.
+const pruneInterval = 30
 
 // NewAppLogWriter 构造日志写入器.
 func NewAppLogWriter(db *gorm.DB) *AppLogWriter { return &AppLogWriter{db: db} }
 
+// SetPruneParams 注入裁剪参数提供者 (每次从设置快照读). 为空时不裁剪.
+// 在 serve 装配阶段调用一次, 之后不再变更.
+func (w *AppLogWriter) SetPruneParams(fn func() (retentionDays, maxRows int64)) {
+	w.pruneParams = fn
+}
+
 // InsertAppLogs 批量插入日志行, 补齐缺失时间戳防止零值入库.
+// 插入成功后累计行数, 每满 pruneInterval 行执行一次裁剪.
 func (w *AppLogWriter) InsertAppLogs(ctx context.Context, rows []model.AppLog) error {
 	if len(rows) == 0 {
 		return nil
@@ -147,7 +167,20 @@ func (w *AppLogWriter) InsertAppLogs(ctx context.Context, rows []model.AppLog) e
 			rows[i].LoggedAt = time.Now().UTC()
 		}
 	}
-	return w.db.WithContext(ctx).Create(&rows).Error
+	if err := w.db.WithContext(ctx).Create(&rows).Error; err != nil {
+		return err
+	}
+	w.inserted += int64(len(rows))
+	if w.inserted >= pruneInterval && w.pruneParams != nil {
+		w.inserted = 0
+		retentionDays, maxRows := w.pruneParams()
+		// 裁剪失败只写 stderr: 本批日志已成功落库, 不能因裁剪失败让上层
+		// 误判落库失败, 也不能递归生成新数据库日志.
+		if err := w.PruneAppLogs(ctx, retentionDays, maxRows); err != nil {
+			fmt.Fprintf(os.Stderr, "pi-teacher: app_log prune failed: %v\n", err)
+		}
+	}
+	return nil
 }
 
 // PruneAppLogs 先删除超过保留天数的行, 再从旧到新裁剪超出 maxRows 的部分,

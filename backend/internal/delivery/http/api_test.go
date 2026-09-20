@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/Pi-Teacher/server/internal/application/appsvc"
 	httpapi "github.com/Pi-Teacher/server/internal/delivery/http"
 	"github.com/Pi-Teacher/server/internal/domain/embedding"
@@ -34,8 +36,10 @@ type testServer struct {
 	// embeddingSvc 直接暴露给测试调用完成判定等内部能力.
 	embeddingSvc *appsvc.EmbeddingService
 	worker       *embeddinginfra.Worker
-	password     string
-	client       *http.Client
+	// db 暴露底层 GORM 句柄, 供第六批直接塞入 app_log 行等测试数据.
+	db       *gorm.DB
+	password string
+	client   *http.Client
 }
 
 // stubProvider 是测试用的 embedding provider: 确定性向量, 可注入错误.
@@ -144,6 +148,8 @@ func newTestServer(t *testing.T) *testServer {
 	calendarRepo := repo.NewCalendarRepository(db.DB)
 	approvalRepo := repo.NewApprovalRepository(db.DB)
 	idempotencyRepo := repo.NewIdempotencyRepository(db.DB)
+	appLogRepo := repo.NewAppLogRepository(db.DB)
+	profileRepo := repo.NewUserProfileRepository(db.DB)
 	settingsRepo := repo.NewSettingsRepository(db.DB)
 	if err := settingsRepo.EnsureDefaults(ctx); err != nil {
 		t.Fatalf("ensure settings: %v", err)
@@ -161,6 +167,8 @@ func newTestServer(t *testing.T) *testServer {
 		topics, cards, glossaries, logger)
 	idempotency := appsvc.NewIdempotencyService(db.DB, idempotencyRepo, logger)
 	settingsSvc := appsvc.NewSettingsService(manager, nil)
+	profileSvc := appsvc.NewUserProfileService(db.DB, profileRepo, manager)
+	logSvc := appsvc.NewLogService(appLogRepo)
 
 	// Embedding: 测试用确定性 provider, 不启动后台 worker loop,
 	// 由测试显式调用 worker.RunOnce 控制处理时机.
@@ -184,6 +192,8 @@ func newTestServer(t *testing.T) *testServer {
 		Idempotency: idempotency,
 		Settings:    settingsSvc,
 		Embedding:   embeddingSvc,
+		UserProfile: profileSvc,
+		Logs:        logSvc,
 		Logger:      logger,
 		DBDriver:    db.Driver,
 		StartedAt:   time.Now(),
@@ -195,7 +205,7 @@ func newTestServer(t *testing.T) *testServer {
 	return &testServer{
 		t: t, srv: srv, auth: auth, settings: manager,
 		provider: provider, embeddingSvc: embeddingSvc, worker: worker,
-		password: password, client: client,
+		db: db.DB, password: password, client: client,
 	}
 }
 

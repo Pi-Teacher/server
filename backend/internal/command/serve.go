@@ -64,6 +64,12 @@ func runServe(ctx context.Context, args []string) error {
 	}
 	applyRuntimeSettings(manager.Snapshot(), runtimeCfg)
 
+	// 日志裁剪参数每次从设置快照读, 修改后无需重启即生效.
+	logWriter.SetPruneParams(func() (int64, int64) {
+		snap := manager.Snapshot()
+		return snap.Int64("database_retention_days"), snap.Int64("database_max_rows")
+	})
+
 	if err := applyStartupSets(ctx, manager, cfg.Sets); err != nil {
 		return err
 	}
@@ -80,6 +86,8 @@ func runServe(ctx context.Context, args []string) error {
 	calendarRepo := repo.NewCalendarRepository(db.DB)
 	approvalRepo := repo.NewApprovalRepository(db.DB)
 	idempotencyRepo := repo.NewIdempotencyRepository(db.DB)
+	appLogRepo := repo.NewAppLogRepository(db.DB)
+	profileRepo := repo.NewUserProfileRepository(db.DB)
 	// FSRS 调度器由 adapter 提供, 固定参数只存在于 adapter 内.
 	scheduler := fsrsadapter.NewScheduler()
 	topicSvc := appsvc.NewTopicService(db.DB, topicRepo, cardRepo, approvalRepo, logger)
@@ -124,6 +132,8 @@ func runServe(ctx context.Context, args []string) error {
 	settingsSvc := appsvc.NewSettingsService(manager, func(snap *settings.Snapshot) {
 		applyRuntimeSettings(snap, runtimeCfg)
 	})
+	profileSvc := appsvc.NewUserProfileService(db.DB, profileRepo, manager)
+	logSvc := appsvc.NewLogService(appLogRepo)
 
 	// 启动时清理过期幂等记录, 随后定时维护.
 	if removed, err := idempotencySvc.CleanupExpired(ctx); err != nil {
@@ -163,6 +173,8 @@ func runServe(ctx context.Context, args []string) error {
 		Idempotency: idempotencySvc,
 		Settings:    settingsSvc,
 		Embedding:   embeddingSvc,
+		UserProfile: profileSvc,
+		Logs:        logSvc,
 		Logger:      logger,
 		DBDriver:    db.Driver,
 		StartedAt:   startedAt,
