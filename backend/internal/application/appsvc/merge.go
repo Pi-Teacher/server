@@ -33,7 +33,13 @@ func (s *CardService) Merge(ctx context.Context, input CardMergeInput) (*CardDet
 	err := persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
 		var txErr error
 		detail, txErr = s.mergeInTx(innerCtx, tx, input)
-		return txErr
+		if txErr != nil {
+			return txErr
+		}
+		if detail.embeddingPending() {
+			s.notifyWorker(innerCtx)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err

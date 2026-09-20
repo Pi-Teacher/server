@@ -15,10 +15,10 @@ const BatchMaxItems = 100
 // runBatch 在单个数据库事务中逐项执行 fn, 任一项失败整批回滚,
 // 并把失败项目的下标附加到错误的 details.index, 让客户端精确定位.
 //
+// fn 收到把事务句柄注入后的 ctx: 下层服务方法据此复用同一事务, 也
+// 可借它登记提交后回调 (embedding worker 唤醒).
 // 空批与超上限在开事务前拒绝, 避免无意义的事务开销.
-// ctx 已携带事务时 (CLI 写请求的幂等包装) 直接复用, 保证整批
-// 领域修改与幂等记录/审批提案同一事务.
-func runBatch[T any](ctx context.Context, db *gorm.DB, items []T, fn func(tx *gorm.DB, item T) error) error {
+func runBatch[T any](ctx context.Context, db *gorm.DB, items []T, fn func(ctx context.Context, tx *gorm.DB, item T) error) error {
 	if len(items) == 0 {
 		return apperr.Validation("items 不能为空").WithDetails(map[string]any{"field": "items"})
 	}
@@ -26,9 +26,9 @@ func runBatch[T any](ctx context.Context, db *gorm.DB, items []T, fn func(tx *go
 		return apperr.Newf(apperr.CodeValidationError, "批量项目数超过上限 %d", BatchMaxItems).
 			WithDetails(map[string]any{"field": "items"})
 	}
-	return persistence.RunInTx(ctx, db, func(_ context.Context, tx *gorm.DB) error {
+	return persistence.RunInTx(ctx, db, func(innerCtx context.Context, tx *gorm.DB) error {
 		for i, item := range items {
-			if err := fn(tx, item); err != nil {
+			if err := fn(innerCtx, tx, item); err != nil {
 				return withBatchIndex(err, i)
 			}
 		}

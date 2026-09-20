@@ -26,6 +26,7 @@ type RouterConfig struct {
 	Approvals    *appsvc.ApprovalService
 	Idempotency  *appsvc.IdempotencyService
 	Settings     *appsvc.SettingsService
+	Embedding    *appsvc.EmbeddingService
 	Logger       *slog.Logger
 	DBDriver     string
 	StartedAt    time.Time
@@ -49,6 +50,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		Approvals:   cfg.Approvals,
 		Idempotency: cfg.Idempotency,
 		Settings:    cfg.Settings,
+		Embedding:   cfg.Embedding,
 		Logger:      cfg.Logger,
 	}
 	if len(cfg.AllowOrigins) > 0 {
@@ -93,6 +95,14 @@ func NewRouter(cfg RouterConfig) http.Handler {
 
 	// --- 复习与日历 ---
 
+	// Embedding 配置与重建仅 Web; 查重 check 与 Web/CLI 同构.
+	mux.Handle("GET /api/web/embedding/config", s.requireWebSession(http.HandlerFunc(s.handleGetEmbeddingConfig)))
+	mux.Handle("PATCH /api/web/embedding/config", s.requireWebSession(http.HandlerFunc(s.handlePatchEmbeddingConfig)))
+	mux.Handle("GET /api/web/embedding/status", s.requireWebSession(http.HandlerFunc(s.handleEmbeddingStatus)))
+	mux.Handle("POST /api/web/embedding/test", s.requireWebSession(http.HandlerFunc(s.handleEmbeddingTest)))
+	mux.Handle("POST /api/web/embedding/rebuild", s.requireWebSession(http.HandlerFunc(s.handleEmbeddingRebuild)))
+	mux.Handle("POST /api/web/embedding/retry-failed", s.requireWebSession(http.HandlerFunc(s.handleEmbeddingRetryFailed)))
+
 	// 复习写端点永远直接生效, 不挂审批分流; CLI 侧仍走幂等中间件.
 	s.registerCRUD(mux, "review/due", "GET", "", s.handleReviewDue, cliWriteSpec{})
 	s.registerCRUD(mux, "review", "POST", "/{card_id}/submit", s.handleReviewSubmit, cliWriteSpec{})
@@ -120,6 +130,8 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	s.registerCRUD(mux, "cards", "PATCH", "/{id}", s.handleUpdateCard, s.writeSpec(model.OpCardUpdate, s.buildCardUpdate, false))
 	s.registerCRUD(mux, "cards", "POST", "/{id}/trash", s.handleTrashCard, s.writeSpec(model.OpCardTrash, s.buildCardTrash, false))
 	s.registerCRUD(mux, "cards", "POST", "/merge", s.handleMergeCard, s.writeSpec(model.OpCardMerge, s.buildCardMerge, false))
+	// check 是只读 dry-run: 永不进审批队列, 但按用户决策仍包幂等中间件.
+	s.registerCRUD(mux, "cards", "POST", "/check", s.handleCheckCard, cliWriteSpec{})
 	// 复习历史仅 Web, 不提供 CLI 同构.
 	mux.Handle("GET /api/web/cards/{id}/reviews", s.requireWebSession(http.HandlerFunc(s.handleCardReviews)))
 

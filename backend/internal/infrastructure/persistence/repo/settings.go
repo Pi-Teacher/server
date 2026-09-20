@@ -3,6 +3,7 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -23,6 +24,12 @@ func NewSettingsRepository(db *gorm.DB) *SettingsRepository {
 	return &SettingsRepository{db: db}
 }
 
+// WithTx 返回绑定到给定事务句柄的仓库副本, 供服务层把设置写入与
+// 领域写入收进同一事务 (embedding 重建的原子性依赖它).
+func (r *SettingsRepository) WithTx(tx *gorm.DB) *SettingsRepository {
+	return &SettingsRepository{db: tx}
+}
+
 var _ settings.Provider = (*SettingsRepository)(nil)
 
 // LoadAll 读取全部设置行, 返回原始字符串值.
@@ -41,40 +48,60 @@ func (r *SettingsRepository) LoadAll(ctx context.Context) (map[string]string, er
 // Apply 在单个事务内逐项 upsert, 全部成功才提交, 返回更新后的完整值集.
 // 冲突分支递增 version 并刷新 updated_at, 保持设置的乐观锁语义连续.
 func (r *SettingsRepository) Apply(ctx context.Context, updates []settings.Update) (map[string]string, error) {
-	registry := settings.Default()
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		now := persistence.Now()
-		for _, u := range updates {
-			encoded, valueType, err := registry.MarshalValue(u.Key, u.Value)
-			if err != nil {
-				return err
-			}
-			row := model.SettingKey{
-				SettingKey:   u.Key,
-				SettingValue: encoded,
-				ValueType:    int16(valueType),
-				Version:      1,
-				CreatedAt:    now,
-				UpdatedAt:    now,
-			}
-			if err := tx.Clauses(clause.OnConflict{
-				Columns: []clause.Column{{Name: "setting_key"}},
-				DoUpdates: clause.Assignments(map[string]any{
-					"setting_value": encoded,
-					"value_type":    int16(valueType),
-					"version":       gorm.Expr("version + 1"),
-					"updated_at":    now,
-				}),
-			}).Create(&row).Error; err != nil {
-				return err
-			}
-		}
-		return nil
+		return r.WithTx(tx).ApplyTx(ctx, updates)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return r.LoadAll(ctx)
+}
+
+// ApplyTx 在调用方提供的事务句柄中逐项 upsert, 不自开事务.
+// 供需要把设置变更与领域写入原子提交的场景使用 (如 embedding 重建).
+func (r *SettingsRepository) ApplyTx(ctx context.Context, updates []settings.Update) error {
+	registry := settings.Default()
+	now := persistence.Now()
+	for _, u := range updates {
+		encoded, valueType, err := registry.MarshalValue(u.Key, u.Value)
+		if err != nil {
+			return err
+		}
+		row := model.SettingKey{
+			SettingKey:   u.Key,
+			SettingValue: encoded,
+			ValueType:    int16(valueType),
+			Version:      1,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		}
+		if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "setting_key"}},
+			DoUpdates: clause.Assignments(map[string]any{
+				"setting_value": encoded,
+				"value_type":    int16(valueType),
+				"version":       gorm.Expr("version + 1"),
+				"updated_at":    now,
+			}),
+		}).Create(&row).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GetOne 读取单个设置的字符串值, 不存在时返回 ("", false, nil).
+// 供事务内读取权威状态使用 (如 embedding_rebuilding).
+func (r *SettingsRepository) GetOne(ctx context.Context, key string) (string, bool, error) {
+	var row model.SettingKey
+	err := r.db.WithContext(ctx).Where("setting_key = ?", key).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return row.SettingValue, true, nil
 }
 
 // EnsureDefaults 为注册表中尚无数据库行的设置补写默认值, 已存在的值不动.

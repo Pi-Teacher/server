@@ -59,9 +59,9 @@ func (s *GlossaryService) Create(ctx context.Context, input GlossaryInput) (*mod
 		return nil, err
 	}
 	var created *model.Glossary
-	err = persistence.RunInTx(ctx, s.db, func(_ context.Context, tx *gorm.DB) error {
+	err = persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
 		var txErr error
-		created, txErr = s.createInTx(ctx, tx, term, definition)
+		created, txErr = s.createInTx(innerCtx, tx, term, definition)
 		return txErr
 	})
 	if err != nil {
@@ -119,8 +119,8 @@ func (s *GlossaryService) BatchCreate(ctx context.Context, inputs []GlossaryInpu
 		items[i] = validated{term: term, definition: definition}
 	}
 	created := make([]model.Glossary, 0, len(items))
-	if err := runBatch(ctx, s.db, items, func(tx *gorm.DB, item validated) error {
-		g, err := s.createInTx(ctx, tx, item.term, item.definition)
+	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item validated) error {
+		g, err := s.createInTx(innerCtx, tx, item.term, item.definition)
 		if err != nil {
 			return err
 		}
@@ -228,8 +228,8 @@ func (s *GlossaryService) Update(ctx context.Context, id, expectedVersion int64,
 
 // Trash 把正常 Glossary 放入回收站.
 func (s *GlossaryService) Trash(ctx context.Context, id, expectedVersion int64) error {
-	return persistence.RunInTx(ctx, s.db, func(_ context.Context, tx *gorm.DB) error {
-		return s.trashInTx(ctx, tx, id, expectedVersion)
+	return persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
+		return s.trashInTx(innerCtx, tx, id, expectedVersion)
 	})
 }
 
@@ -257,8 +257,8 @@ func (s *GlossaryService) trashInTx(ctx context.Context, tx *gorm.DB, id, expect
 // BatchTrash 在单个事务中整批回收 Glossary.
 func (s *GlossaryService) BatchTrash(ctx context.Context, items []VersionedItem) (int64, error) {
 	var count int64
-	if err := runBatch(ctx, s.db, items, func(tx *gorm.DB, item VersionedItem) error {
-		if err := s.trashInTx(ctx, tx, item.ID, item.ExpectedVersion); err != nil {
+	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item VersionedItem) error {
+		if err := s.trashInTx(innerCtx, tx, item.ID, item.ExpectedVersion); err != nil {
 			return err
 		}
 		count++
@@ -278,9 +278,9 @@ func (s *GlossaryService) ListTrashed(ctx context.Context, page, pageSize int) (
 // Restore 把回收站 Glossary 恢复为正常对象, 同名冲突返回 name_conflict.
 func (s *GlossaryService) Restore(ctx context.Context, id, expectedVersion int64) (*model.Glossary, error) {
 	var restored *model.Glossary
-	err := persistence.RunInTx(ctx, s.db, func(_ context.Context, tx *gorm.DB) error {
+	err := persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
 		var txErr error
-		restored, txErr = s.restoreInTx(ctx, tx, id, expectedVersion)
+		restored, txErr = s.restoreInTx(innerCtx, tx, id, expectedVersion)
 		return txErr
 	})
 	if err != nil {
@@ -320,8 +320,8 @@ func (s *GlossaryService) restoreInTx(ctx context.Context, tx *gorm.DB, id, expe
 // BatchRestore 在单个事务中整批恢复回收站 Glossary.
 func (s *GlossaryService) BatchRestore(ctx context.Context, items []VersionedItem) ([]model.Glossary, error) {
 	restored := make([]model.Glossary, 0, len(items))
-	if err := runBatch(ctx, s.db, items, func(tx *gorm.DB, item VersionedItem) error {
-		g, err := s.restoreInTx(ctx, tx, item.ID, item.ExpectedVersion)
+	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item VersionedItem) error {
+		g, err := s.restoreInTx(innerCtx, tx, item.ID, item.ExpectedVersion)
 		if err != nil {
 			return err
 		}
@@ -335,16 +335,16 @@ func (s *GlossaryService) BatchRestore(ctx context.Context, items []VersionedIte
 
 // DeleteForever 永久删除回收站 Glossary. 只开放给 Web 会话.
 func (s *GlossaryService) DeleteForever(ctx context.Context, id, expectedVersion int64) error {
-	return persistence.RunInTx(ctx, s.db, func(_ context.Context, tx *gorm.DB) error {
-		return s.deleteForeverInTx(ctx, tx, id, expectedVersion)
+	return persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
+		return s.deleteForeverInTx(innerCtx, tx, id, expectedVersion)
 	})
 }
 
 // BatchDeleteForever 在单个事务中整批永久删除回收站 Glossary.
 func (s *GlossaryService) BatchDeleteForever(ctx context.Context, items []VersionedItem) (int64, error) {
 	var deleted int64
-	if err := runBatch(ctx, s.db, items, func(tx *gorm.DB, item VersionedItem) error {
-		if err := s.deleteForeverInTx(ctx, tx, item.ID, item.ExpectedVersion); err != nil {
+	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item VersionedItem) error {
+		if err := s.deleteForeverInTx(innerCtx, tx, item.ID, item.ExpectedVersion); err != nil {
 			return err
 		}
 		deleted++

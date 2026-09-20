@@ -35,6 +35,7 @@ type Server struct {
 	Approvals   *appsvc.ApprovalService
 	Idempotency *appsvc.IdempotencyService
 	Settings    *appsvc.SettingsService
+	Embedding   *appsvc.EmbeddingService
 	Logger      *slog.Logger
 	// AllowedOrigins 是 CSRF 来源校验额外接受的来源集合,
 	// 为空时只按请求 Host 匹配.

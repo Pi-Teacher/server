@@ -70,9 +70,9 @@ func (s *TopicService) Create(ctx context.Context, input TopicInput) (*model.Top
 		return nil, err
 	}
 	var created *model.Topic
-	err = persistence.RunInTx(ctx, s.db, func(_ context.Context, tx *gorm.DB) error {
+	err = persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
 		var txErr error
-		created, txErr = s.createInTx(ctx, tx, name, description)
+		created, txErr = s.createInTx(innerCtx, tx, name, description)
 		return txErr
 	})
 	if err != nil {
@@ -130,8 +130,8 @@ func (s *TopicService) BatchCreate(ctx context.Context, inputs []TopicInput) ([]
 		items[i] = validated{name: name, description: description}
 	}
 	created := make([]model.Topic, 0, len(items))
-	if err := runBatch(ctx, s.db, items, func(tx *gorm.DB, item validated) error {
-		topic, err := s.createInTx(ctx, tx, item.name, item.description)
+	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item validated) error {
+		topic, err := s.createInTx(innerCtx, tx, item.name, item.description)
 		if err != nil {
 			return err
 		}
@@ -267,9 +267,9 @@ func (s *TopicService) readRow(ctx context.Context, tx *gorm.DB, id int64) (*rep
 // 事务中连带回收, 否则仅解除关联 (topic_id 置空, version 加一);
 // 两种情况下关联卡 version 都恰好增加一次.
 func (s *TopicService) Trash(ctx context.Context, id, expectedVersion int64, includeCards bool) (trashedID, affectedCards int64, err error) {
-	err = persistence.RunInTx(ctx, s.db, func(_ context.Context, tx *gorm.DB) error {
+	err = persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
 		var txErr error
-		affectedCards, txErr = s.trashInTx(ctx, tx, id, expectedVersion, includeCards)
+		affectedCards, txErr = s.trashInTx(innerCtx, tx, id, expectedVersion, includeCards)
 		return txErr
 	})
 	if err != nil {
@@ -280,8 +280,8 @@ func (s *TopicService) Trash(ctx context.Context, id, expectedVersion int64, inc
 
 // BatchTrash 在单个事务中整批回收 Topic, includeCards 语义同 Trash.
 func (s *TopicService) BatchTrash(ctx context.Context, items []VersionedItem, includeCards bool) (trashedCount, affectedCards int64, err error) {
-	if err := runBatch(ctx, s.db, items, func(tx *gorm.DB, item VersionedItem) error {
-		affected, err := s.trashInTx(ctx, tx, item.ID, item.ExpectedVersion, includeCards)
+	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item VersionedItem) error {
+		affected, err := s.trashInTx(innerCtx, tx, item.ID, item.ExpectedVersion, includeCards)
 		if err != nil {
 			return err
 		}
@@ -426,8 +426,8 @@ func (s *TopicService) Restore(ctx context.Context, id, expectedVersion int64) (
 // BatchRestore 在单个事务中整批恢复回收站 Topic.
 func (s *TopicService) BatchRestore(ctx context.Context, items []VersionedItem) ([]model.Topic, error) {
 	restored := make([]model.Topic, 0, len(items))
-	if err := runBatch(ctx, s.db, items, func(tx *gorm.DB, item VersionedItem) error {
-		topic, err := s.restoreInTx(ctx, tx, item.ID, item.ExpectedVersion)
+	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item VersionedItem) error {
+		topic, err := s.restoreInTx(innerCtx, tx, item.ID, item.ExpectedVersion)
 		if err != nil {
 			return err
 		}
@@ -469,16 +469,16 @@ func (s *TopicService) restoreInTx(ctx context.Context, tx *gorm.DB, id, expecte
 
 // DeleteForever 永久删除回收站 Topic. 只开放给 Web 会话.
 func (s *TopicService) DeleteForever(ctx context.Context, id, expectedVersion int64) error {
-	return persistence.RunInTx(ctx, s.db, func(_ context.Context, tx *gorm.DB) error {
-		return s.deleteForeverInTx(ctx, tx, id, expectedVersion)
+	return persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
+		return s.deleteForeverInTx(innerCtx, tx, id, expectedVersion)
 	})
 }
 
 // BatchDeleteForever 在单个事务中整批永久删除回收站 Topic.
 func (s *TopicService) BatchDeleteForever(ctx context.Context, items []VersionedItem) (int64, error) {
 	var deleted int64
-	if err := runBatch(ctx, s.db, items, func(tx *gorm.DB, item VersionedItem) error {
-		if err := s.deleteForeverInTx(ctx, tx, item.ID, item.ExpectedVersion); err != nil {
+	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item VersionedItem) error {
+		if err := s.deleteForeverInTx(innerCtx, tx, item.ID, item.ExpectedVersion); err != nil {
 			return err
 		}
 		deleted++

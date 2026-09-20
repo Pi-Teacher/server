@@ -10,11 +10,14 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/Pi-Teacher/server/internal/application/appsvc"
 	httpapi "github.com/Pi-Teacher/server/internal/delivery/http"
+	"github.com/Pi-Teacher/server/internal/domain/embedding"
+	embeddinginfra "github.com/Pi-Teacher/server/internal/infrastructure/embedding"
 	"github.com/Pi-Teacher/server/internal/infrastructure/persistence/repo"
 	"github.com/Pi-Teacher/server/internal/platform/config"
 	"github.com/Pi-Teacher/server/internal/platform/database"
@@ -26,8 +29,83 @@ type testServer struct {
 	t        *testing.T
 	srv      *httptest.Server
 	auth     *appsvc.AuthService
-	password string
-	client   *http.Client
+	settings *settings.Manager
+	provider *stubProvider
+	// embeddingSvc 直接暴露给测试调用完成判定等内部能力.
+	embeddingSvc *appsvc.EmbeddingService
+	worker       *embeddinginfra.Worker
+	password     string
+	client       *http.Client
+}
+
+// stubProvider 是测试用的 embedding provider: 确定性向量, 可注入错误.
+// 实现 domain/embedding.Provider 与 appsvc.EmbeddingProber.
+type stubProvider struct {
+	mu        sync.Mutex
+	err       error
+	dims      int
+	calls     int
+	lastInput []string
+}
+
+func (p *stubProvider) setError(err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.err = err
+}
+
+func (p *stubProvider) setDims(d int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.dims = d
+}
+
+func (p *stubProvider) callCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.calls
+}
+
+// vectorFor 根据文本生成确定性单位向量: 首维由文本长度决定, 其余为 0.
+// 相同文本得到相同向量, 不同文本得到不同向量, 足够验证 top-K 排序.
+func (p *stubProvider) vectorFor(text string) []float32 {
+	dims := p.dims
+	if p.dims == 0 {
+		dims = 4
+	}
+	v := make([]float32, dims)
+	v[0] = float32(len([]rune(text))%dims + 1)
+	return embedding.Normalize(v)
+}
+
+func (p *stubProvider) Embed(_ context.Context, inputs []string) ([][]float32, error) {
+	p.mu.Lock()
+	err := p.err
+	p.calls++
+	p.lastInput = append([]string(nil), inputs...)
+	p.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	out := make([][]float32, len(inputs))
+	for i, in := range inputs {
+		out[i] = p.vectorFor(in)
+	}
+	return out, nil
+}
+
+func (p *stubProvider) Probe(_ context.Context) (int, error) {
+	p.mu.Lock()
+	err := p.err
+	dims := p.dims
+	p.mu.Unlock()
+	if err != nil {
+		return 0, err
+	}
+	if dims == 0 {
+		dims = 4
+	}
+	return dims, nil
 }
 
 func newTestServer(t *testing.T) *testServer {
@@ -84,6 +162,16 @@ func newTestServer(t *testing.T) *testServer {
 	idempotency := appsvc.NewIdempotencyService(db.DB, idempotencyRepo, logger)
 	settingsSvc := appsvc.NewSettingsService(manager, nil)
 
+	// Embedding: 测试用确定性 provider, 不启动后台 worker loop,
+	// 由测试显式调用 worker.RunOnce 控制处理时机.
+	provider := &stubProvider{dims: 4}
+	embeddingSvc := appsvc.NewEmbeddingService(db.DB, manager, settingsRepo, cardRepo,
+		provider, provider, nil, logger)
+	worker := embeddinginfra.NewWorker(cardRepo, provider,
+		func() int { return int(manager.Snapshot().Int64("embedding_worker_batch_size")) },
+		func(workerCtx context.Context) { embeddingSvc.FinalizeIfIdle(workerCtx) }, logger)
+	cards.SetEmbeddingNotifier(worker.Wake)
+
 	handler := httpapi.NewRouter(httpapi.RouterConfig{
 		Auth:        auth,
 		Topics:      topics,
@@ -95,6 +183,7 @@ func newTestServer(t *testing.T) *testServer {
 		Approvals:   approvals,
 		Idempotency: idempotency,
 		Settings:    settingsSvc,
+		Embedding:   embeddingSvc,
 		Logger:      logger,
 		DBDriver:    db.Driver,
 		StartedAt:   time.Now(),
@@ -103,7 +192,11 @@ func newTestServer(t *testing.T) *testServer {
 	t.Cleanup(srv.Close)
 
 	client := &http.Client{Jar: newCookieJar(t)}
-	return &testServer{t: t, srv: srv, auth: auth, password: password, client: client}
+	return &testServer{
+		t: t, srv: srv, auth: auth, settings: manager,
+		provider: provider, embeddingSvc: embeddingSvc, worker: worker,
+		password: password, client: client,
+	}
 }
 
 func newCookieJar(t *testing.T) http.CookieJar {

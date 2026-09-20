@@ -12,6 +12,8 @@ import (
 
 	"github.com/Pi-Teacher/server/internal/application/appsvc"
 	httpapi "github.com/Pi-Teacher/server/internal/delivery/http"
+	"github.com/Pi-Teacher/server/internal/domain/embedding"
+	embeddinginfra "github.com/Pi-Teacher/server/internal/infrastructure/embedding"
 	fsrsadapter "github.com/Pi-Teacher/server/internal/infrastructure/fsrs"
 	"github.com/Pi-Teacher/server/internal/infrastructure/persistence/repo"
 	"github.com/Pi-Teacher/server/internal/platform/config"
@@ -96,6 +98,28 @@ func runServe(ctx context.Context, args []string) error {
 	trashSvc := appsvc.NewTrashService(db.DB, topicRepo, cardRepo, glossaryRepo, approvalRepo, logger)
 	approvalSvc := appsvc.NewApprovalService(db.DB, approvalRepo, topicRepo, cardRepo, glossaryRepo,
 		topicSvc, cardSvc, glossarySvc, logger)
+
+	// Embedding: 连接参数每次调用前读设置快照, 改配置后无需重启即生效.
+	embeddingConfig := func() embedding.Config {
+		snap := manager.Snapshot()
+		return embedding.Config{
+			BaseURL:    snap.String("embedding_base_url"),
+			APIKey:     snap.String("embedding_api_key"),
+			Model:      snap.String("embedding_model"),
+			Dimensions: int(snap.Int64("embedding_dimensions")),
+			Timeout:    time.Duration(snap.Int64("embedding_timeout")) * time.Second,
+		}
+	}
+	embeddingProvider := embeddinginfra.NewClient(embeddingConfig)
+	batchSize := func() int { return int(manager.Snapshot().Int64("embedding_worker_batch_size")) }
+	var embeddingSvc *appsvc.EmbeddingService
+	worker := embeddinginfra.NewWorker(cardRepo, embeddingProvider, batchSize,
+		func(workerCtx context.Context) { embeddingSvc.FinalizeIfIdle(workerCtx) }, logger)
+	embeddingSvc = appsvc.NewEmbeddingService(db.DB, manager, settingsRepo, cardRepo,
+		embeddingProvider, embeddingProvider, worker.Wake, logger)
+	// 建卡/改 front/恢复/合并产生 pending 后, 事务提交时唤醒 worker.
+	cardSvc.SetEmbeddingNotifier(worker.Wake)
+
 	idempotencySvc := appsvc.NewIdempotencyService(db.DB, idempotencyRepo, logger)
 	settingsSvc := appsvc.NewSettingsService(manager, func(snap *settings.Snapshot) {
 		applyRuntimeSettings(snap, runtimeCfg)
@@ -124,6 +148,9 @@ func runServe(ctx context.Context, args []string) error {
 	}
 
 	startedAt := time.Now()
+	// 单实例后台 embedding worker: 随进程生命周期运行.
+	go worker.Run(ctx)
+
 	router := httpapi.NewRouter(httpapi.RouterConfig{
 		Auth:        authSvc,
 		Topics:      topicSvc,
@@ -135,6 +162,7 @@ func runServe(ctx context.Context, args []string) error {
 		Approvals:   approvalSvc,
 		Idempotency: idempotencySvc,
 		Settings:    settingsSvc,
+		Embedding:   embeddingSvc,
 		Logger:      logger,
 		DBDriver:    db.Driver,
 		StartedAt:   startedAt,

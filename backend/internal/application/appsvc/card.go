@@ -33,6 +33,9 @@ type CardService struct {
 	// timezone 返回用户配置的日历时区, 用于把 UTC 时刻映射为自然日.
 	// 每次调用读当前快照, 设置变更后立即生效.
 	timezone func() *time.Location
+	// notifyEmbedding 在事务提交后唤醒 embedding worker.
+	// 仅当本次操作产生了 pending 任务时调用; 未注入时什么也不做.
+	notifyEmbedding func()
 	// now 集中提供当前 UTC 时间, 便于测试替换.
 	now func() time.Time
 }
@@ -85,6 +88,33 @@ type CardDetail struct {
 	Schedule *model.CardSchedule
 }
 
+// SetEmbeddingNotifier 注入 embedding worker 的唤醒回调.
+// 由启动装配在构造后调用, 避免把 worker 依赖倒灌进领域服务构造函数.
+func (s *CardService) SetEmbeddingNotifier(notify func()) {
+	s.notifyEmbedding = notify
+}
+
+// notifyWorker 登记一次事务提交后的 worker 唤醒.
+// 必须传入 RunInTx 提供的内层 ctx: 它携带提交钩子集合, 能把唤醒推迟到
+// 最外层事务真正提交之后 (直接请求自开事务、CLI 幂等包装与审批批准复用
+// 外层事务三种情况都适用). 未带事务时立即执行.
+func (s *CardService) notifyWorker(ctx context.Context) {
+	if s.notifyEmbedding == nil {
+		return
+	}
+	notify := s.notifyEmbedding
+	persistence.OnCommit(ctx, notify)
+}
+
+// embeddingPending 判断详情对应的卡片是否带有待处理的 embedding 任务.
+// 写事务提交后据此决定是否唤醒 worker, 避免无意义的空扫描.
+func (d *CardDetail) embeddingPending() bool {
+	if d == nil || d.Card == nil || !d.Card.EnableEmbedding || d.Card.EmbeddingStatus == nil {
+		return false
+	}
+	return *d.Card.EmbeddingStatus == model.EmbeddingPending
+}
+
 // newSchedule 用调度器的新卡初始值构造新卡调度行.
 // v1 固定空学习步骤, 新卡 state=New, due=now;
 // LastReviewAt 为空表示未复习, 落库为 NULL.
@@ -127,7 +157,7 @@ func (s *CardService) Create(ctx context.Context, input CardInput) (*CardDetail,
 		return nil, err
 	}
 	var detail *CardDetail
-	err = persistence.RunInTx(ctx, s.db, func(_ context.Context, tx *gorm.DB) error {
+	err = persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
 		var txErr error
 		detail, txErr = s.createInTx(ctx, tx, CardInput{
 			TopicID:         input.TopicID,
@@ -135,7 +165,13 @@ func (s *CardService) Create(ctx context.Context, input CardInput) (*CardDetail,
 			Back:            back,
 			EnableEmbedding: input.EnableEmbedding,
 		}, s.now())
-		return txErr
+		if txErr != nil {
+			return txErr
+		}
+		if detail.embeddingPending() {
+			s.notifyWorker(innerCtx)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -207,12 +243,15 @@ func (s *CardService) BatchCreate(ctx context.Context, inputs []CardInput) ([]Ca
 	}
 	now := s.now()
 	created := make([]CardDetail, 0, len(items))
-	if err := runBatch(ctx, s.db, items, func(tx *gorm.DB, item validated) error {
-		detail, err := s.createInTx(ctx, tx, item.input, now)
+	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item validated) error {
+		detail, err := s.createInTx(innerCtx, tx, item.input, now)
 		if err != nil {
 			return err
 		}
 		created = append(created, *detail)
+		if detail.embeddingPending() {
+			s.notifyWorker(innerCtx)
+		}
 		return nil
 	}); err != nil {
 		return nil, err
@@ -279,10 +318,16 @@ func (s *CardService) Update(ctx context.Context, id, expectedVersion int64, pat
 		patch.Back = back
 	}
 	var detail *CardDetail
-	err := persistence.RunInTx(ctx, s.db, func(_ context.Context, tx *gorm.DB) error {
+	err := persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
 		var txErr error
 		detail, txErr = s.updateInTx(ctx, tx, id, expectedVersion, patch)
-		return txErr
+		if txErr != nil {
+			return txErr
+		}
+		if detail.embeddingPending() {
+			s.notifyWorker(innerCtx)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -461,8 +506,8 @@ func trashCardTx(
 // BatchTrash 在单个事务中整批回收 Card.
 func (s *CardService) BatchTrash(ctx context.Context, items []VersionedItem) (int64, error) {
 	var count int64
-	if err := runBatch(ctx, s.db, items, func(tx *gorm.DB, item VersionedItem) error {
-		if err := s.trashInTx(ctx, tx, item.ID, item.ExpectedVersion); err != nil {
+	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item VersionedItem) error {
+		if err := s.trashInTx(innerCtx, tx, item.ID, item.ExpectedVersion); err != nil {
 			return err
 		}
 		count++
@@ -485,10 +530,16 @@ type RestoreCardResult struct {
 func (s *CardService) Restore(ctx context.Context, trashedID, expectedVersion int64, topicID *int64) (*RestoreCardResult, *CardDetail, error) {
 	var result *RestoreCardResult
 	var detail *CardDetail
-	err := persistence.RunInTx(ctx, s.db, func(_ context.Context, tx *gorm.DB) error {
+	err := persistence.RunInTx(ctx, s.db, func(innerCtx context.Context, tx *gorm.DB) error {
 		var txErr error
 		result, detail, txErr = s.restoreInTx(ctx, tx, trashedID, expectedVersion, topicID)
-		return txErr
+		if txErr != nil {
+			return txErr
+		}
+		if detail.embeddingPending() {
+			s.notifyWorker(innerCtx)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, nil, err
@@ -564,13 +615,16 @@ type RestoreItem struct {
 func (s *CardService) BatchRestore(ctx context.Context, items []RestoreItem) ([]RestoreCardResult, []CardDetail, error) {
 	results := make([]RestoreCardResult, 0, len(items))
 	details := make([]CardDetail, 0, len(items))
-	if err := runBatch(ctx, s.db, items, func(tx *gorm.DB, item RestoreItem) error {
-		result, detail, err := s.restoreInTx(ctx, tx, item.ID, item.ExpectedVersion, item.TopicID)
+	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item RestoreItem) error {
+		result, detail, err := s.restoreInTx(innerCtx, tx, item.ID, item.ExpectedVersion, item.TopicID)
 		if err != nil {
 			return err
 		}
 		results = append(results, *result)
 		details = append(details, *detail)
+		if detail.embeddingPending() {
+			s.notifyWorker(innerCtx)
+		}
 		return nil
 	}); err != nil {
 		return nil, nil, err
@@ -594,8 +648,8 @@ func (s *CardService) DeleteForever(ctx context.Context, id, expectedVersion int
 // BatchDeleteForever 在单个事务中整批永久删除回收站 Card.
 func (s *CardService) BatchDeleteForever(ctx context.Context, items []VersionedItem) (int64, error) {
 	var deleted int64
-	if err := runBatch(ctx, s.db, items, func(tx *gorm.DB, item VersionedItem) error {
-		if err := s.deleteForeverInTx(ctx, tx, item.ID, item.ExpectedVersion); err != nil {
+	if err := runBatch(ctx, s.db, items, func(innerCtx context.Context, tx *gorm.DB, item VersionedItem) error {
+		if err := s.deleteForeverInTx(innerCtx, tx, item.ID, item.ExpectedVersion); err != nil {
 			return err
 		}
 		deleted++
