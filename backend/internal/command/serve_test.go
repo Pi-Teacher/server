@@ -2,12 +2,11 @@ package command
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/Pi-Teacher/server/internal/infrastructure/persistence/repo"
 	"github.com/Pi-Teacher/server/internal/platform/config"
-	"github.com/Pi-Teacher/server/internal/platform/database"
+	"github.com/Pi-Teacher/server/internal/platform/database/dbtest"
 	"github.com/Pi-Teacher/server/internal/platform/settings"
 )
 
@@ -15,17 +14,7 @@ import (
 // 且未知 key 与不允许命令行修改的 key 直接报错.
 func TestApplyStartupSets(t *testing.T) {
 	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := database.Open(ctx, &config.Config{
-		DBDriver: config.DriverSQLite, DBDSN: dbPath, Listen: ":0",
-	})
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	defer func() { _ = db.Close() }()
-	if err := database.Migrate(ctx, db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.Open(t)
 	repo := repo.NewSettingsRepository(db.DB)
 	if err := repo.EnsureDefaults(ctx); err != nil {
 		t.Fatalf("ensure defaults: %v", err)

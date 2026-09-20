@@ -98,7 +98,7 @@ func (r *GlossaryRepository) ListTrashedIDs(ctx context.Context) ([]int64, error
 func (r *GlossaryRepository) ListActive(ctx context.Context, q string, offset, limit int) ([]model.Glossary, int64, error) {
 	scope := r.db.WithContext(ctx).Model(&model.Glossary{}).Where("trashed_at IS NULL")
 	if q != "" {
-		scope = scope.Where("LOWER(term) LIKE ? ESCAPE '\\'", likePattern(q))
+		scope = scope.Where("LOWER(term) LIKE ? ESCAPE '!'", likePattern(q))
 	}
 	var total int64
 	if err := scope.Count(&total).Error; err != nil {

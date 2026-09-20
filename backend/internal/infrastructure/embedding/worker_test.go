@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,8 +14,7 @@ import (
 	embeddinginfra "github.com/Pi-Teacher/server/internal/infrastructure/embedding"
 	"github.com/Pi-Teacher/server/internal/infrastructure/persistence/model"
 	"github.com/Pi-Teacher/server/internal/infrastructure/persistence/repo"
-	"github.com/Pi-Teacher/server/internal/platform/config"
-	"github.com/Pi-Teacher/server/internal/platform/database"
+	"github.com/Pi-Teacher/server/internal/platform/database/dbtest"
 )
 
 // fakeProvider 是确定性 provider, 可按文本决定成功或失败.
@@ -38,23 +36,10 @@ func (p *fakeProvider) Embed(_ context.Context, inputs []string) ([][]float32, e
 	return out, nil
 }
 
-// setupWorkerDB 打开临时 SQLite 并跑迁移, 返回 Card 仓库与底层 db.
+// setupWorkerDB 打开一个已迁移的空库, 返回 Card 仓库与底层 db.
 func setupWorkerDB(t *testing.T) (*repo.CardRepository, *gorm.DB) {
 	t.Helper()
-	ctx := context.Background()
-	cfg := &config.Config{
-		DBDriver: config.DriverSQLite,
-		DBDSN:    filepath.Join(t.TempDir(), "worker.db"),
-		Listen:   ":0",
-	}
-	db, err := database.Open(ctx, cfg)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := database.Migrate(ctx, db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.Open(t)
 	return repo.NewCardRepository(db.DB), db.DB
 }
 

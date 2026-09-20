@@ -365,8 +365,8 @@ func TestSixthBatchSystemInfo(t *testing.T) {
 	if info.Version == "" || info.GoVersion == "" {
 		t.Fatalf("system info missing fields: %+v", info)
 	}
-	if info.DBDriver != "sqlite" {
-		t.Fatalf("db_driver = %s, want sqlite", info.DBDriver)
+	if info.DBDriver != ts.driver {
+		t.Fatalf("db_driver = %s, want %s", info.DBDriver, ts.driver)
 	}
 	if info.UptimeSeconds < 0 {
 		t.Fatalf("uptime = %d, want >= 0", info.UptimeSeconds)

@@ -107,7 +107,7 @@ func (r *TopicRepository) ListTrashedIDs(ctx context.Context) ([]int64, error) {
 func (r *TopicRepository) ListActive(ctx context.Context, q string, offset, limit int) ([]TopicRow, int64, error) {
 	scope := r.db.WithContext(ctx).Model(&model.Topic{}).Where("trashed_at IS NULL")
 	if q != "" {
-		scope = scope.Where("LOWER(name) LIKE ? ESCAPE '\\'", likePattern(q))
+		scope = scope.Where("LOWER(name) LIKE ? ESCAPE '!'", likePattern(q))
 	}
 	var total int64
 	if err := scope.Count(&total).Error; err != nil {

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -21,8 +20,7 @@ import (
 	"github.com/Pi-Teacher/server/internal/domain/embedding"
 	embeddinginfra "github.com/Pi-Teacher/server/internal/infrastructure/embedding"
 	"github.com/Pi-Teacher/server/internal/infrastructure/persistence/repo"
-	"github.com/Pi-Teacher/server/internal/platform/config"
-	"github.com/Pi-Teacher/server/internal/platform/database"
+	"github.com/Pi-Teacher/server/internal/platform/database/dbtest"
 	"github.com/Pi-Teacher/server/internal/platform/settings"
 )
 
@@ -37,7 +35,9 @@ type testServer struct {
 	embeddingSvc *appsvc.EmbeddingService
 	worker       *embeddinginfra.Worker
 	// db 暴露底层 GORM 句柄, 供第六批直接塞入 app_log 行等测试数据.
-	db       *gorm.DB
+	db *gorm.DB
+	// driver 是当前测试所用方言 (sqlite/mysql/postgres), 供断言 system/info.
+	driver   string
 	password string
 	client   *http.Client
 }
@@ -115,18 +115,8 @@ func (p *stubProvider) Probe(_ context.Context) (int, error) {
 func newTestServer(t *testing.T) *testServer {
 	t.Helper()
 	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "test.db")
 
-	cfg := &config.Config{DBDriver: config.DriverSQLite, DBDSN: dbPath, Listen: ":0"}
-	db, err := database.Open(ctx, cfg)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	if err := database.Migrate(ctx, db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.Open(t)
 
 	// 测试不关心日志内容, 丢弃输出保持测试输出干净.
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -205,7 +195,7 @@ func newTestServer(t *testing.T) *testServer {
 	return &testServer{
 		t: t, srv: srv, auth: auth, settings: manager,
 		provider: provider, embeddingSvc: embeddingSvc, worker: worker,
-		db: db.DB, password: password, client: client,
+		db: db.DB, driver: db.Driver, password: password, client: client,
 	}
 }
 
@@ -336,8 +326,8 @@ func TestFirstBatchAcceptance(t *testing.T) {
 		GoVersion string `json:"go_version"`
 	}
 	decodeBody(t, resp, &info)
-	if info.DBDriver != "sqlite" {
-		t.Fatalf("db_driver = %q, want sqlite", info.DBDriver)
+	if info.DBDriver != ts.driver {
+		t.Fatalf("db_driver = %q, want %q", info.DBDriver, ts.driver)
 	}
 	if info.Version == "" || info.GoVersion == "" {
 		t.Fatal("system info missing version fields")

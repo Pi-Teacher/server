@@ -12,7 +12,7 @@ LDFLAGS     := -s -w -X github.com/Pi-Teacher/server/internal/platform/version.V
 DB_DRIVER ?= sqlite
 DB_DSN    ?= ./data/pi-teacher.db
 
-.PHONY: help build test test-race lint fmt vet staticcheck migrate run clean tidy
+.PHONY: help build test test-race test-mysql test-postgres lint fmt vet staticcheck migrate run clean tidy
 
 help: ## 显示帮助.
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -26,6 +26,14 @@ test: ## 运行全部单元与集成测试 (SQLite).
 
 test-race: ## 带竞态检测运行测试.
 	GOTOOLCHAIN=go1.26.7 go test -race ./...
+
+test-mysql: ## 用 MySQL 跑集成测试 (需 PI_TEST_DSN).
+	@test -n "$(PI_TEST_DSN)" || { echo "需设置 PI_TEST_DSN, 例: mysql://user:pass@tcp(host:port)/db"; exit 1; }
+	PI_TEST_DRIVER=mysql GOTOOLCHAIN=go1.26.7 go test -p 1 ./...
+
+test-postgres: ## 用 PostgreSQL 跑集成测试 (需 PI_TEST_DSN).
+	@test -n "$(PI_TEST_DSN)" || { echo "需设置 PI_TEST_DSN, 例: postgres://user:pass@host:5432/db?sslmode=disable"; exit 1; }
+	PI_TEST_DRIVER=postgres GOTOOLCHAIN=go1.26.7 go test -p 1 ./...
 
 lint: fmt vet ## 格式化并静态检查.
 

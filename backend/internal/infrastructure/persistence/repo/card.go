@@ -76,7 +76,7 @@ func (r *CardRepository) List(ctx context.Context, f CardFilter, offset, limit i
 	}
 	if f.Q != "" {
 		pattern := likePattern(f.Q)
-		q = q.Where("(LOWER(front) LIKE ? ESCAPE '\\' OR LOWER(back) LIKE ? ESCAPE '\\')", pattern, pattern)
+		q = q.Where("(LOWER(front) LIKE ? ESCAPE '!' OR LOWER(back) LIKE ? ESCAPE '!')", pattern, pattern)
 	}
 	switch f.EmbeddingStatus {
 	case "":
