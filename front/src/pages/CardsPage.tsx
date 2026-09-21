@@ -315,7 +315,6 @@ export const CardsPage: React.FC = () => {
       <header className="border-b border-outline-variant/30 bg-surface-container-lowest px-4 py-6 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="font-mono text-label-sm uppercase tracking-widest text-primary">阶段 2</p>
             <h1 className="mt-1 text-headline-md text-on-surface">卡片管理</h1>
             <p className="mt-2 max-w-3xl text-body-md text-on-surface-variant">
               搜索并筛选正常 Card，查看 Topic、Embedding 状态、版本与更新时间。

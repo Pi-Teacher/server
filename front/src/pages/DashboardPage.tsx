@@ -32,7 +32,6 @@ export const DashboardPage: React.FC = () => {
       <PageHeader
         eyebrow="Overview"
         title="Dashboard"
-        description="今日复习与制卡概览、学习热力图, 以及快速开始复习入口。全部数据来自服务端, 页面只读。"
       />
 
       <main className="p-4 sm:p-6 lg:p-8">

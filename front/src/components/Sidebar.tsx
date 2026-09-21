@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ConceptHelpModal } from './ConceptHelpModal';
+import logoUrl from '../assets/logo.png';
 
 const REPOSITORY_URL = 'https://github.com/Pi-Teacher';
 
@@ -66,12 +67,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPath, onNavigate, onLog
   return (
     <aside className="flex h-full min-h-screen w-72 flex-col border-r border-outline-variant/30 bg-surface-container-lowest shadow-subtle lg:fixed lg:left-0 lg:top-0 lg:z-50">
       <div className="flex h-16 items-center gap-2 border-b border-outline-variant/20 px-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-on-primary">
-          <span className="material-symbols-outlined text-[20px]">psychology</span>
-        </div>
+        <img src={logoUrl} alt="Pi Teacher" className="h-8 w-8 shrink-0 rounded-lg" />
         <div className="min-w-0">
           <p className="truncate text-[16px] font-semibold text-on-surface">Pi Teacher</p>
-          <p className="truncate font-mono text-[11px] text-on-surface-variant">FSRS Spaced Repetition</p>
+          <p className="truncate font-mono text-[11px] text-on-surface-variant">github.com/Pi-Teacher</p>
         </div>
       </div>
 

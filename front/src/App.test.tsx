@@ -98,7 +98,7 @@ describe('App 路由与默认首页', () => {
     });
 
     renderApp('/');
-    expect(await screen.findByRole('heading', { name: '登录到本地实例' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '登录到Pi Teacher Server' })).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText('登录密码'), 'local-password');
     await userEvent.click(screen.getByRole('button', { name: '登录' }));

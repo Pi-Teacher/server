@@ -19,7 +19,7 @@ export const PlaceholderPage: React.FC<PlaceholderPageProps> = ({ title, descrip
           <div>
             <h2 className="text-headline-sm text-on-surface">路由与应用壳层已就绪</h2>
             <p className="mt-2 text-body-md text-on-surface-variant">
-              该页面将在对应阶段连接真实 API. 当前占位页用于确认导航、认证守卫和响应式布局正常工作.
+              当前占位页用于确认导航、认证守卫和响应式布局正常工作.
             </p>
           </div>
         </div>

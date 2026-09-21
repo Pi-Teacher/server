@@ -206,9 +206,8 @@ export const ProfilePage: React.FC = () => {
   return (
     <div className="min-h-full bg-surface">
       <PageHeader
-        eyebrow="阶段 5"
         title="个人信息与偏好"
-        description="使用 Markdown 维护用户画像，AI agent 在制卡前会读取它来组织更贴合你背景的例子。"
+        description="维护个人画像，AI agent可根据你的画像调整教学，Markdown格式"
       />
       <main className="space-y-4 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
         {successMessage !== undefined && <Toast message={successMessage} tone="success" />}

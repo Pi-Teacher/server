@@ -193,7 +193,7 @@ export const batchRejectApprovalsMutationOptions = () =>
  * 来源 API Key 名称映射。后端审批响应只给出 requested_by_api_key_id,
  * 名称需用 API Key 列表补齐; 无法映射时页面回退显示 `API Key #<id>`。
  *
- * 这里没有复用 api/apiKeys.ts (该模块归 API Key 设置页, 由并行阶段维护),
+ * 这里没有复用 api/apiKeys.ts (该模块归 API Key 设置页维护),
  * 单用户数据量小, 一次取 100 条即可覆盖, 超出时由回退文案兜底。
  */
 export interface ApprovalAPIKeyRef {

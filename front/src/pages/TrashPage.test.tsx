@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TrashPage } from './TrashPage';
 
 /**
- * 回收站页面 (阶段 4) 集成测试。
+ * 回收站页面集成测试。
  *
  * 覆盖三 Tab 的 loading/empty/error/success、局部失败不阻塞其他 Tab、真实字段渲染、
  * Card 恢复生成新 ID 且不出现“保留原 Topic”、Topic 恢复 409 name_conflict、

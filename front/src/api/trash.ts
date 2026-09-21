@@ -3,7 +3,7 @@ import { apiRequest } from './client';
 import { PageResponse } from './types';
 
 /**
- * 回收站 (阶段 4) 数据契约。
+ * 回收站数据契约。
  *
  * 字段严格对齐后端 handler (`trash_handlers.go` 与各 `*_handlers.go` 的
  * `trashed*Response`)。回收站 Card 不保存原 Topic, 响应中没有 `topic_id`,

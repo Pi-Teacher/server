@@ -393,7 +393,6 @@ export const TrashPage: React.FC = () => {
   return (
     <div className="min-h-full bg-surface">
       <PageHeader
-        eyebrow="阶段 4"
         title="回收站"
         description="按类型恢复或永久删除已放入回收站的 Card、Topic 与术语。恢复 Card 时需指定目标 Topic 或选择无 Topic。"
       />

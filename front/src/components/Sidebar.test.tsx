@@ -71,7 +71,7 @@ describe('Sidebar 底部操作区', () => {
 
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toHaveAccessibleName('使用说明');
-    expect(screen.getByText('用户已经彻底理解的概念。收录即代表已掌握，不再参与复习排期。')).toBeInTheDocument();
+    expect(screen.getByText('用户已经彻底理解的概念。')).toBeInTheDocument();
     expect(screen.getByText('学习时产生、需要长期记忆的知识点，使用 FSRS 算法安排复习时间。')).toBeInTheDocument();
   });
 });

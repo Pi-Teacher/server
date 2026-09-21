@@ -733,7 +733,7 @@ describe('系统设置 - 修改密码页', () => {
       new_password: 'brand-new-pass'
     });
     // 成功后清理认证状态 -> ProtectedRoute 重定向登录页。
-    expect(await screen.findByRole('heading', { name: '登录到本地实例' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '登录到Pi Teacher Server' })).toBeInTheDocument();
   });
 
   it('当前密码错误时把错误定位到当前密码输入框', async () => {
@@ -760,6 +760,6 @@ describe('系统设置 - 修改密码页', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: '确认修改' }));
 
     expect(await screen.findByText('当前密码不正确')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '登录到本地实例' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '登录到Pi Teacher Server' })).not.toBeInTheDocument();
   });
 });

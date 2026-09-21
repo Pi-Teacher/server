@@ -10,7 +10,7 @@ interface ToggleProps {
 
 /**
  * 设置页专用开关。使用 role="switch" 表达开/关语义, 键盘可用,
- * 且不使用公共 ui 组件, 避免与并行阶段共享文件产生冲突。
+ * 且不使用公共 ui 组件, 避免与并行开发共享文件产生冲突。
  */
 export const Toggle: React.FC<ToggleProps> = ({ label, checked, disabled = false, onChange }) => (
   <button

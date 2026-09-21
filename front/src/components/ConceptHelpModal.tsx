@@ -12,7 +12,7 @@ interface ConceptEntry {
 const CORE_CONCEPTS: ConceptEntry[] = [
   {
     name: '术语表',
-    description: '用户已经彻底理解的概念。收录即代表已掌握，不再参与复习排期。'
+    description: '用户已经彻底理解的概念。'
   },
   {
     name: '卡片',

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
 import { useAuth } from '../auth/AuthProvider';
+import logoUrl from '../assets/logo.png';
 
 const pathName = (pathname: string) => pathname.split('/').filter(Boolean)[0] ?? 'dashboard';
 
@@ -33,7 +34,7 @@ export const AppShell: React.FC = () => {
           <span className="material-symbols-outlined">menu</span>
         </button>
         <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">psychology</span>
+          <img src={logoUrl} alt="Pi Teacher" className="h-7 w-7 rounded-md" />
           <span className="font-semibold">Pi Teacher</span>
         </div>
         <button

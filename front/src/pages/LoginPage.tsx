@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { getApiErrorMessage } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { Button } from '../components/ui/Button';
+import logoUrl from '../assets/logo.png';
 
 interface LocationState {
   from?: string;
@@ -27,7 +28,7 @@ export const LoginPage: React.FC = () => {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (password === '') {
-      setLocalError('请输入服务端生成的登录密码');
+      setLocalError('请输入登录密码');
       return;
     }
     try {
@@ -45,11 +46,9 @@ export const LoginPage: React.FC = () => {
       <div className="grid w-full max-w-5xl overflow-hidden rounded-2xl border border-outline-variant/40 bg-surface-container-lowest shadow-card lg:grid-cols-[1.05fr_0.95fr]">
         <section className="hidden bg-primary p-12 text-on-primary lg:flex lg:flex-col lg:justify-between">
           <div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/15">
-              <span className="material-symbols-outlined text-[28px]">psychology</span>
-            </div>
+            <img src={logoUrl} alt="Pi Teacher" className="h-12 w-12 rounded-xl" />
             <p className="mt-10 font-mono text-label-md uppercase tracking-[0.18em] text-on-primary-container">Precision Cognition</p>
-            <h1 className="mt-3 max-w-md text-[38px] font-semibold leading-tight">把知识整理、复习与 AI 提议放在一个可靠工作台中</h1>
+            <h1 className="mt-3 max-w-md text-[38px] font-semibold leading-tight">永远记住你的知识与偏好</h1>
           </div>
           <p className="max-w-md text-body-md text-on-primary-container">
             单用户本地实例. 登录后 Session 与 CSRF 由服务端管理, 前端不保存明文密码.
@@ -58,13 +57,11 @@ export const LoginPage: React.FC = () => {
 
         <section className="p-7 sm:p-12">
           <div className="flex items-center gap-3 lg:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-on-primary">
-              <span className="material-symbols-outlined">psychology</span>
-            </div>
+            <img src={logoUrl} alt="Pi Teacher" className="h-10 w-10 rounded-xl" />
             <span className="text-headline-sm">Pi Teacher</span>
           </div>
           <p className="mt-10 font-mono text-label-sm uppercase tracking-widest text-primary lg:mt-0">Local Access</p>
-          <h2 className="mt-2 text-headline-md text-on-surface">登录到本地实例</h2>
+          <h2 className="mt-2 text-headline-md text-on-surface">登录到Pi Teacher Server</h2>
           <p className="mt-2 text-body-md text-on-surface-variant">
             首次启动后端时, 初始密码只会在服务端终端显示一次.
           </p>

@@ -17,7 +17,6 @@ const tabs = [
 export const SettingsLayout: React.FC = () => (
   <div className="min-h-full bg-surface">
     <PageHeader
-      eyebrow="阶段 7"
       title="系统设置"
       description="按区域分页管理: 通用、Embedding、API Key 与修改密码。各页独立加载与保存。"
     />

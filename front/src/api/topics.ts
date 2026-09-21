@@ -16,7 +16,7 @@ export const topicsQueryOptions = () =>
     queryFn: ({ signal }) => fetchTopics(signal)
   });
 
-// --- 阶段 3: Topics 页面的参数化列表与详情 ---
+// --- Topics 页面的参数化列表与详情 ---
 
 export interface TopicsListParams {
   page: number;
@@ -66,7 +66,7 @@ export const topicDetailQueryOptions = (id: number) =>
     enabled: id > 0
   });
 
-// --- 阶段 3: Topics 创建与编辑 ---
+// --- Topics 创建与编辑 ---
 
 export interface CreateTopicInput {
   name: string;
@@ -112,7 +112,7 @@ export const updateTopicMutationOptions = () =>
     mutationFn: updateTopic
   });
 
-// --- 阶段 3: Topics 回收预览与放入回收站 ---
+// --- Topics 回收预览与放入回收站 ---
 
 export interface TopicTrashPreviewResponse {
   topics: number;
