@@ -28,6 +28,28 @@ export const Input: React.FC<FieldProps & React.InputHTMLAttributes<HTMLInputEle
   );
 };
 
+export const Textarea: React.FC<FieldProps & React.TextareaHTMLAttributes<HTMLTextAreaElement>> = ({
+  label,
+  hint,
+  error,
+  id,
+  className = '',
+  ...props
+}) => {
+  const textareaID = id ?? props.name;
+  return (
+    <label htmlFor={textareaID} className="block">
+      <span className="text-label-md text-on-surface">{label}</span>
+      <textarea
+        {...props}
+        id={textareaID}
+        className={`mt-2 w-full resize-y rounded-xl border bg-surface-container-lowest px-3.5 py-2.5 text-body-md text-on-surface outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15 ${error ? 'border-error' : 'border-outline-variant'} ${className}`}
+      />
+      {error ? <span className="mt-1 block text-body-sm text-error">{error}</span> : hint ? <span className="mt-1 block text-body-sm text-on-surface-variant">{hint}</span> : null}
+    </label>
+  );
+};
+
 export const Select: React.FC<FieldProps & React.SelectHTMLAttributes<HTMLSelectElement>> = ({
   label,
   hint,
