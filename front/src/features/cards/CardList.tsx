@@ -1,6 +1,7 @@
 import React from 'react';
 import { CardEmbeddingStatus, CardListItem } from '../../api/cards';
 import { Badge } from '../../components/ui/Badge';
+import { formatDateTime } from '../../utils/datetime';
 
 interface CardListProps {
   cards: CardListItem[];
@@ -23,18 +24,7 @@ const statusPresentation: Record<
   disabled: { label: '未启用', tone: 'neutral' }
 };
 
-const formatUpdatedAt = (value: string): string => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  }).format(date);
-};
+const formatUpdatedAt = formatDateTime;
 
 const CardRow: React.FC<{
   card: CardListItem;

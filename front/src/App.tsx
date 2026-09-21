@@ -4,9 +4,12 @@ import { ProtectedRoute } from './auth/ProtectedRoute';
 import { PlaceholderPage } from './components/ui/PlaceholderPage';
 import { AppShell } from './layout/AppShell';
 import { CardsPage } from './pages/CardsPage';
+import { GlossaryPage } from './pages/GlossaryPage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { ProfilePage } from './pages/ProfilePage';
 import { ReviewPage } from './pages/ReviewPage';
+import { TopicsPage } from './pages/TopicsPage';
 
 export const App: React.FC = () => (
   <Routes>
@@ -16,11 +19,11 @@ export const App: React.FC = () => (
         <Route index element={<Navigate to="/review" replace />} />
         <Route path="review" element={<ReviewPage />} />
         <Route path="cards" element={<CardsPage />} />
-        <Route path="topics" element={<PlaceholderPage phase="阶段 3" title="知识分类" description="管理 Topic、查看关联卡片数量并预览回收影响。" />} />
-        <Route path="glossary" element={<PlaceholderPage phase="阶段 3" title="术语表" description="维护术语和 Markdown 定义。" />} />
+        <Route path="topics" element={<TopicsPage />} />
+        <Route path="glossary" element={<GlossaryPage />} />
         <Route path="approvals" element={<PlaceholderPage phase="阶段 6" title="AI 审批中心" description="查看并处理 CLI 提交的待审批提案。" />} />
         <Route path="trash" element={<PlaceholderPage phase="阶段 4" title="回收站" description="恢复或永久删除 Card、Topic 和 Glossary。" />} />
-        <Route path="profile" element={<PlaceholderPage phase="阶段 5" title="个人信息与偏好" description="使用 Markdown 维护用户画像并处理乐观锁冲突。" />} />
+        <Route path="profile" element={<ProfilePage />} />
         <Route path="settings" element={<PlaceholderPage phase="阶段 7" title="系统设置" description="配置审批、Embedding、API Key、日志和密码。" />} />
       </Route>
     </Route>

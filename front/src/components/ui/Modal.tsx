@@ -23,20 +23,24 @@ const sizeClasses: Record<ModalSize, string> = {
 
 export const Modal: React.FC<ModalProps> = ({ open, title, onClose, size = 'md', children }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
+  // onClose 用 ref 保存: 弹窗打开期间父组件重渲染会传入新的函数标识,
+  // 若作为 effect 依赖会导致焦点被重复抢回弹窗容器, 输入框每敲一个字符就失焦.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialogRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') onCloseRef.current();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       previous?.focus();
     };
-  }, [onClose, open]);
+  }, [open]);
 
   if (!open) return null;
   return (
