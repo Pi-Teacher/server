@@ -14,14 +14,14 @@ export const LoginPage: React.FC = () => {
   const location = useLocation();
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState('');
-  const from = (location.state as LocationState | null)?.from ?? '/review';
+  const from = (location.state as LocationState | null)?.from ?? '/dashboard';
 
   useEffect(() => {
     setLocalError('');
   }, [password]);
 
   if (!auth.isRestoring && auth.isAuthenticated) {
-    return <Navigate to="/review" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {

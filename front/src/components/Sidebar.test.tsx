@@ -7,8 +7,8 @@ import { Sidebar } from './Sidebar';
  * 避免后续调整时被无意改乱。
  */
 describe('Sidebar 导航', () => {
-  it('主组顺序: 卡片复习 / 卡片管理 / 知识分类 / 术语表 / 审批开关控制 / 提案审批', () => {
-    render(<Sidebar currentPath="review" onNavigate={vi.fn()} onLogout={vi.fn()} />);
+  it('主组顺序: Dashboard / 卡片复习 / 卡片管理 / 知识分类 / 术语表 / 审批开关控制 / 提案审批', () => {
+    render(<Sidebar currentPath="dashboard" onNavigate={vi.fn()} onLogout={vi.fn()} />);
 
     // 用 DOM 顺序校验信息架构顺序, 避免图标文字干扰 label 提取。
     const order = screen
@@ -17,6 +17,7 @@ describe('Sidebar 导航', () => {
       .filter((label): label is string => Boolean(label));
 
     expect(order).toEqual([
+      'Dashboard',
       '卡片复习',
       '卡片管理',
       '知识分类',

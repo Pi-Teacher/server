@@ -8,6 +8,7 @@ interface SidebarProps {
 }
 
 const mainItems = [
+  { path: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
   { path: 'review', label: '卡片复习', icon: 'repeat' },
   { path: 'cards', label: '卡片管理', icon: 'style' },
   { path: 'topics', label: '知识分类', icon: 'folder_special' },

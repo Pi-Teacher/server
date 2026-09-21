@@ -3,7 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
 import { useAuth } from '../auth/AuthProvider';
 
-const pathName = (pathname: string) => pathname.split('/').filter(Boolean)[0] ?? 'review';
+const pathName = (pathname: string) => pathname.split('/').filter(Boolean)[0] ?? 'dashboard';
 
 export const AppShell: React.FC = () => {
   const location = useLocation();

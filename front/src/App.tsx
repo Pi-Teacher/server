@@ -10,6 +10,7 @@ import { GeneralSettingsPage } from './features/settings/GeneralSettingsPage';
 import { AppShell } from './layout/AppShell';
 import { SettingsLayout } from './layout/SettingsLayout';
 import { CardsPage } from './pages/CardsPage';
+import { DashboardPage } from './pages/DashboardPage';
 import { ApprovalsPage } from './pages/ApprovalsPage';
 import { GlossaryPage } from './pages/GlossaryPage';
 import { LoginPage } from './pages/LoginPage';
@@ -24,7 +25,8 @@ export const App: React.FC = () => (
     <Route path="/login" element={<LoginPage />} />
     <Route element={<ProtectedRoute />}>
       <Route element={<AppShell />}>
-        <Route index element={<Navigate to="/review" replace />} />
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<DashboardPage />} />
         <Route path="review" element={<ReviewPage />} />
         <Route path="cards" element={<CardsPage />} />
         <Route path="topics" element={<TopicsPage />} />
