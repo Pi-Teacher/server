@@ -39,6 +39,9 @@ const mockApi = (sessionAuthenticated: boolean) =>
     if (url.startsWith('/api/web/calendar')) {
       return jsonResponse({ days: [{ date: TODAY, created_cards: 0, review_events: 0 }] });
     }
+    if (url.startsWith('/api/web/trash/')) {
+      return jsonResponse({ items: [], total: 0, page: 1, page_size: 20 });
+    }
     if (url.startsWith('/api/web/cards')) {
       return jsonResponse({ items: [], total: 0, page: 1, page_size: 1 });
     }
@@ -113,5 +116,14 @@ describe('App 路由与默认首页', () => {
     mockApi(true);
     renderApp('/review');
     expect(await screen.findByRole('heading', { name: '暂无到期复习卡片' })).toBeInTheDocument();
+  });
+
+  it('已有 /trash 路由接入真实回收站页面', async () => {
+    mockApi(true);
+    renderApp('/trash');
+    expect(await screen.findByRole('heading', { name: '回收站' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Cards' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Topics' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Glossary' })).toBeInTheDocument();
   });
 });
