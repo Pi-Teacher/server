@@ -12,13 +12,15 @@ const mainItems = [
   { path: 'cards', label: '卡片管理', icon: 'style' },
   { path: 'topics', label: '知识分类', icon: 'folder_special' },
   { path: 'glossary', label: '术语表', icon: 'menu_book' },
-  { path: 'approvals', label: 'AI 审批中心', icon: 'smart_toy' }
+  { path: 'approval-switches', label: '审批开关控制', icon: 'rule_settings' },
+  { path: 'approvals', label: '提案审批', icon: 'smart_toy' }
 ] as const;
 
 const secondaryItems = [
-  { path: 'trash', label: '回收站', icon: 'delete' },
   { path: 'profile', label: '个人信息与偏好', icon: 'manage_accounts' },
-  { path: 'settings', label: '系统设置', icon: 'settings' }
+  { path: 'settings', label: '系统设置', icon: 'settings' },
+  { path: 'logs', label: '日志查看', icon: 'receipt_long' },
+  { path: 'trash', label: '回收站', icon: 'delete' }
 ] as const;
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentPath, onNavigate, onLogout, badges = {} }) => {

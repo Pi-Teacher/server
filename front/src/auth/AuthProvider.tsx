@@ -9,6 +9,11 @@ interface AuthContextValue {
   isRestoring: boolean;
   login: (password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /**
+   * 仅清理本地认证状态, 不调用后端 logout. 用于后端已在服务端使会话失效的场景
+   * (例如修改密码成功后会吊销全部 session), 避免再发一次必然返回 401 的 logout 请求.
+   */
+  invalidateSession: () => void;
   loginError: unknown;
   isLoggingIn: boolean;
 }
@@ -69,10 +74,11 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       logout: async () => {
         await logoutMutation.mutateAsync();
       },
+      invalidateSession: clearSession,
       loginError: loginMutation.error,
       isLoggingIn: loginMutation.isPending
     }),
-    [loginMutation, logoutMutation, session, sessionQuery.isPending]
+    [clearSession, loginMutation, logoutMutation, session, sessionQuery.isPending]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
