@@ -1,4 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { ConceptHelpModal } from './ConceptHelpModal';
+
+const REPOSITORY_URL = 'https://github.com/Pi-Teacher';
 
 interface SidebarProps {
   currentPath: string;
@@ -25,6 +28,12 @@ const secondaryItems = [
 ] as const;
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentPath, onNavigate, onLogout, badges = {} }) => {
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  // 页面切换时关闭弹窗: 移动端抽屉随导航关闭, 避免弹窗遗留。
+  useEffect(() => {
+    setHelpOpen(false);
+  }, [currentPath]);
   const renderItem = (item: (typeof mainItems)[number] | (typeof secondaryItems)[number]) => {
     const active = currentPath === item.path;
     const badge = item.path in badges ? badges[item.path as keyof typeof badges] : undefined;
@@ -72,20 +81,44 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPath, onNavigate, onLog
         {secondaryItems.map(renderItem)}
       </nav>
 
-      <div className="border-t border-outline-variant/30 bg-surface-container-low p-3">
-        <div className="flex items-center gap-3 rounded-xl p-2">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
-            <span className="material-symbols-outlined text-[20px]">person</span>
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-semibold text-on-surface">本地用户</p>
-            <p className="truncate font-mono text-[11px] text-on-surface-variant">Single-user instance</p>
-          </div>
-          <button type="button" title="退出登录" aria-label="退出登录" onClick={onLogout} className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container hover:text-error">
-            <span className="material-symbols-outlined text-[19px]">logout</span>
+      <div className="flex flex-col gap-2 border-t border-outline-variant/30 bg-surface-container-low p-3">
+        <button
+          type="button"
+          onClick={onLogout}
+          title="退出登录"
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/50 px-3 py-2 text-[13px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-error"
+        >
+          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+            logout
+          </span>
+          退出登录
+        </button>
+        <div className="flex gap-2">
+          <a
+            href={REPOSITORY_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-outline-variant/50 px-2 py-2 text-[13px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          >
+            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+              code
+            </span>
+            项目仓库
+          </a>
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-outline-variant/50 px-2 py-2 text-[13px] font-medium text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface"
+          >
+            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+              help
+            </span>
+            使用说明
           </button>
         </div>
       </div>
+
+      <ConceptHelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
     </aside>
   );
 };
