@@ -1,0 +1,104 @@
+name: Release
+
+# 手动触发: 取仓库中最新的 tag, 检出该 tag 指向的 commit, 为其交叉编译
+# 六个平台的 pi-teacher-server 二进制, 上传为 Actions 产物并附加到同名 GitHub Release.
+on:
+  workflow_dispatch:
+
+# 创建 Release 并上传附件需要写权限; 其余步骤只读.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # 需要完整历史与全部 tag 才能找到"最新 tag".
+      - name: 检出仓库 (含全部 tag)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 版本号与构建源码都取自最新 tag: 先解析再检出, 保证产物与 tag 严格对应,
+      # 不受默认分支后续提交影响.
+      - name: 解析最新 tag 并检出其 commit
+        id: tag
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          TAG="$(git tag --sort=-v:refname | head -n1)"
+          if [ -z "$TAG" ]; then
+            echo "::error::仓库中没有任何 tag, 无法确定发布版本"
+            exit 1
+          fi
+          echo "使用最新 tag: $TAG"
+          git checkout "$TAG"
+          echo "检出 commit: $(git rev-parse HEAD)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: front/package-lock.json
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: 安装前端依赖
+        working-directory: front
+        run: npm ci
+
+      # 复用 Makefile 的 webui 目标: 构建前端并把产物复制进 go:embed 目录,
+      # 保证 CI 与本地 make build 走同一条路径.
+      - name: 构建前端并复制到内嵌目录
+        working-directory: backend
+        run: make webui
+
+      # 纯 Go 无 CGO, 直接交叉编译即可, 无需模拟器或目标平台工具链.
+      - name: 交叉编译各平台
+        working-directory: backend
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p ../dist-release
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            ext=""
+            [ "$os" = "windows" ] && ext=".exe"
+            out="../dist-release/${os}-${arch}-pi-teacher-server-${TAG}${ext}"
+            echo "::group::构建 ${os}/${arch}"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              go build -trimpath \
+                -ldflags "-s -w -X github.com/Pi-Teacher/server/internal/platform/version.Version=${TAG}" \
+                -o "$out" ./cmd/pi-teacher-server
+            ls -lh "$out"
+            echo "::endgroup::"
+          done
+          echo "产物清单:"
+          ls -lh ../dist-release
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-teacher-server-${{ steps.tag.outputs.tag }}
+          path: dist-release/*
+          if-no-files-found: error
+
+      # tag 已存在时只补传附件, 避免重复触发因 Release 已存在而失败.
+      - name: 创建 GitHub Release 并附加二进制
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" dist-release/* --clobber

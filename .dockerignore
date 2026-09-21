@@ -1,0 +1,26 @@
+# 构建上下文是仓库根; 排除一切无需进入镜像的内容, 缩小上下文并避免
+# 本地 node_modules / 旧的 dist 覆盖镜像内的全新构建产物.
+
+# 版本控制与 CI
+.git
+.github
+
+# 依赖与构建产物 (镜像内会重新安装与构建)
+**/node_modules
+front/dist
+backend/bin
+backend/internal/delivery/http/webui/dist
+
+# 本地运行数据与测试沙箱
+.dev
+.test
+**/*.db
+**/*.db-shm
+**/*.db-wal
+
+# 文档与编辑器杂物
+docs
+**/*.md
+**/*.mmd
+*.tsbuildinfo
+**/.DS_Store
