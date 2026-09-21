@@ -79,6 +79,22 @@ export const reviewDueQueryOptions = (topicId: ReviewTopicFilter) =>
     gcTime: 0
   });
 
+/**
+ * Dashboard 用的到期总数: 只消费 total, 不推进 Review 队列。
+ * 用 limit=1 取最小载荷, 避免用截断后的 items.length 冒充全局总数。
+ */
+export const reviewDueTotalQueryKey = ['review', 'due', 'total'] as const;
+
+export const fetchReviewDueTotal = (signal?: AbortSignal): Promise<DueReviewResponse> =>
+  apiRequest<DueReviewResponse>(buildReviewDuePath(null, 1), { signal });
+
+export const reviewDueTotalQueryOptions = () =>
+  queryOptions({
+    queryKey: reviewDueTotalQueryKey,
+    queryFn: ({ signal }) => fetchReviewDueTotal(signal),
+    staleTime: 0
+  });
+
 export const submitReview = (request: SubmitReviewRequest): Promise<SubmitReviewResponse> =>
   apiRequest<SubmitReviewResponse>(`/api/web/review/${request.cardId}/submit`, {
     method: 'POST',

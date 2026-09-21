@@ -17,4 +17,10 @@ describe('buildReviewDuePath', () => {
     const url = new URL(buildReviewDuePath(0), 'http://localhost');
     expect(url.searchParams.get('topic_id')).toBe('0');
   });
+
+  it('到期总数查询使用 limit=1 且不带 topic_id', () => {
+    const url = new URL(buildReviewDuePath(null, 1), 'http://localhost');
+    expect(url.searchParams.get('limit')).toBe('1');
+    expect(url.searchParams.has('topic_id')).toBe(false);
+  });
 });

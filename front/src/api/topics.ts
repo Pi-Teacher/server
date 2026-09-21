@@ -167,3 +167,18 @@ export const trashTopicMutationOptions = () =>
   mutationOptions({
     mutationFn: trashTopic
   });
+
+/**
+ * Dashboard 用的分类总数: page_size=1 只取 total。
+ * 与 topicsQueryKey 同属 ['topics', ...] 前缀, Topic 增删后一起刷新。
+ */
+export const topicsTotalQueryKey = ['topics', 'total'] as const;
+
+export const fetchTopicsTotal = (signal?: AbortSignal): Promise<PageResponse<Topic>> =>
+  apiRequest<PageResponse<Topic>>('/api/web/topics?page=1&page_size=1', { signal });
+
+export const topicsTotalQueryOptions = () =>
+  queryOptions({
+    queryKey: topicsTotalQueryKey,
+    queryFn: ({ signal }) => fetchTopicsTotal(signal)
+  });

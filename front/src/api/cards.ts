@@ -263,3 +263,18 @@ export const mergeCardsMutationOptions = () =>
   mutationOptions({
     mutationFn: mergeCards
   });
+
+/**
+ * Dashboard 用的卡片总数: page_size=1 只取 total, 不拉取列表数据。
+ * 与列表查询同属 ['cards', ...] 前缀, Card 增删失效 'cards' 时会一起刷新。
+ */
+export const cardsTotalQueryKey = ['cards', 'total'] as const;
+
+export const fetchCardsTotal = (signal?: AbortSignal): Promise<PageResponse<CardListItem>> =>
+  apiRequest<PageResponse<CardListItem>>('/api/web/cards?page=1&page_size=1', { signal });
+
+export const cardsTotalQueryOptions = () =>
+  queryOptions({
+    queryKey: cardsTotalQueryKey,
+    queryFn: ({ signal }) => fetchCardsTotal(signal)
+  });
