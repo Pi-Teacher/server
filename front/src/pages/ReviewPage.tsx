@@ -1,10 +1,21 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Sidebar } from '../components/Sidebar';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { ApiError, getApiErrorMessage } from '../api/client';
+import {
+  DueReviewItem,
+  ReviewTopicFilter,
+  reviewDueQueryKey,
+  reviewDueQueryOptions,
+  submitReviewMutationOptions
+} from '../api/review';
+import { topicsQueryOptions } from '../api/topics';
+import { EmptyReview } from '../components/EmptyReview';
 import { ReviewCardStage } from '../components/ReviewCardStage';
 import { ReviewSummary } from '../components/ReviewSummary';
-import { EmptyReview } from '../components/EmptyReview';
-import { MOCK_DUE_ITEMS, MOCK_TOPICS } from '../mockData';
-import { DueReviewItem, FSRSRating, ReviewSessionSummary, RATING_SHORTCUT_MAP } from '../types';
+import { ConflictDialog } from '../components/ui/ConflictDialog';
+import { ErrorState, LoadingState } from '../components/ui/States';
+import { FSRSRating, RATING_SHORTCUT_MAP, ReviewSessionSummary } from '../types';
 
 const createEmptySummary = (): ReviewSessionSummary => ({
   reviewedCount: 0,
@@ -16,99 +27,189 @@ const createEmptySummary = (): ReviewSessionSummary => ({
   totalTimeSeconds: 0
 });
 
+const isEditableTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName;
+  return (
+    tagName === 'INPUT' ||
+    tagName === 'TEXTAREA' ||
+    tagName === 'SELECT' ||
+    target.isContentEditable ||
+    target.closest('[contenteditable="true"]') !== null
+  );
+};
+
 export const ReviewPage: React.FC = () => {
-  // '' 表示全部; 数字字符串表示 topic_id; '0' 表示无 Topic (技术约定 12)
-  const [selectedTopicId, setSelectedTopicId] = useState<string>('');
-  const [queue, setQueue] = useState<DueReviewItem[]>(MOCK_DUE_ITEMS);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  // null 表示全部 Topic, 0 表示请求无 Topic, 正整数表示具体 Topic.
+  const [selectedTopicId, setSelectedTopicId] = useState<ReviewTopicFilter>(null);
+  const [queue, setQueue] = useState<DueReviewItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isRevealed, setIsRevealed] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [summary, setSummary] = useState<ReviewSessionSummary>(createEmptySummary);
   const [cardStartTime, setCardStartTime] = useState(() => Date.now());
+  const [submitError, setSubmitError] = useState<string>();
+  const [isConflictOpen, setIsConflictOpen] = useState(false);
+  const submitLockRef = useRef(false);
+  const loadedQueryResultRef = useRef('');
 
-  // topic_id -> name 映射. 复习队列只返回 topic_id, 名称需从 topics 列表 join.
-  const topicNameMap = useMemo(() => {
-    const map = new Map<number, string>();
-    MOCK_TOPICS.forEach((t) => map.set(t.id, t.name));
-    return map;
-  }, []);
+  const topicsQuery = useQuery(topicsQueryOptions());
+  const dueQuery = useQuery(reviewDueQueryOptions(selectedTopicId));
+  const submitMutation = useMutation(submitReviewMutationOptions());
 
-  const handleTopicChange = (value: string) => {
-    setSelectedTopicId(value);
-    const filtered =
-      value === '' ? MOCK_DUE_ITEMS : MOCK_DUE_ITEMS.filter((c) => c.topic_id === Number(value));
-    setQueue(filtered);
-    setCurrentIndex(0);
-    setIsRevealed(false);
-    setIsFinished(filtered.length === 0);
-    setSummary(createEmptySummary());
-    setCardStartTime(Date.now());
-  };
-
-  const handleReveal = useCallback(() => setIsRevealed(true), []);
-
-  const handleRate = useCallback(
-    (rating: FSRSRating) => {
-      const elapsedSec = (Date.now() - cardStartTime) / 1000;
-
-      setSummary((prev) => {
-        const nextCount = prev.reviewedCount + 1;
-        const nextTotal = prev.totalTimeSeconds + elapsedSec;
-        return {
-          reviewedCount: nextCount,
-          againCount: prev.againCount + (rating === 'again' ? 1 : 0),
-          hardCount: prev.hardCount + (rating === 'hard' ? 1 : 0),
-          goodCount: prev.goodCount + (rating === 'good' ? 1 : 0),
-          easyCount: prev.easyCount + (rating === 'easy' ? 1 : 0),
-          totalTimeSeconds: nextTotal,
-          averageTimeSeconds: nextTotal / nextCount
-        };
-      });
-
-      // 真实实现: 此处调用 POST /api/web/review/{card_id}/submit
-      // 并处理 409 version_conflict. 原型阶段仅推进本地队列.
-      if (currentIndex + 1 < queue.length) {
-        setCurrentIndex((i) => i + 1);
-        setIsRevealed(false);
-        setCardStartTime(Date.now());
-      } else {
-        setIsFinished(true);
-      }
-    },
-    [cardStartTime, currentIndex, queue.length]
-  );
-
-  const handleRestart = useCallback(() => {
+  // 每次服务端返回新的队列对象时都重建本地会话. React Query 的 queryKey
+  // 会隔离 Topic 请求, AbortSignal 则在旧查询不再需要时取消底层 fetch.
+  useEffect(() => {
+    if (dueQuery.data === undefined) return;
+    const resultKey = `${selectedTopicId ?? 'all'}:${dueQuery.dataUpdatedAt}`;
+    if (loadedQueryResultRef.current === resultKey) return;
+    loadedQueryResultRef.current = resultKey;
+    setQueue(dueQuery.data.items);
     setCurrentIndex(0);
     setIsRevealed(false);
     setIsFinished(false);
     setSummary(createEmptySummary());
     setCardStartTime(Date.now());
+    setSubmitError(undefined);
+    setIsConflictOpen(false);
+    submitLockRef.current = false;
+  }, [dueQuery.data, dueQuery.dataUpdatedAt, selectedTopicId]);
+
+  const topicNameMap = useMemo(() => {
+    const names = new Map<number, string>();
+    topicsQuery.data?.items.forEach((topic) => names.set(topic.id, topic.name));
+    return names;
+  }, [topicsQuery.data]);
+
+  const resetLocalSession = useCallback(() => {
+    setQueue([]);
+    setCurrentIndex(0);
+    setIsRevealed(false);
+    setIsFinished(false);
+    setSummary(createEmptySummary());
+    setCardStartTime(Date.now());
+    setSubmitError(undefined);
+    setIsConflictOpen(false);
+    submitLockRef.current = false;
+    submitMutation.reset();
+  }, [submitMutation]);
+
+  const reloadQueue = useCallback(async () => {
+    resetLocalSession();
+    await queryClient.invalidateQueries({ queryKey: reviewDueQueryKey(selectedTopicId) });
+  }, [queryClient, resetLocalSession, selectedTopicId]);
+
+  const handleTopicChange = useCallback(
+    (value: string) => {
+      resetLocalSession();
+      setSelectedTopicId(value === '' ? null : Number(value));
+    },
+    [resetLocalSession]
+  );
+
+  const handleReveal = useCallback(() => {
+    setSubmitError(undefined);
+    setIsRevealed(true);
   }, []);
 
-  // 键盘: Space 揭示, 1-4 评分, Esc 退出(回到首张)
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-
-      if (e.key === 'Escape') {
-        handleRestart();
+  const handleRate = useCallback(
+    (rating: FSRSRating) => {
+      const currentCard = queue[currentIndex];
+      if (
+        currentCard === undefined ||
+        !isRevealed ||
+        submitLockRef.current ||
+        submitMutation.isPending
+      ) {
         return;
       }
 
-      if (isFinished || queue.length === 0) return;
+      // ref 锁在 React 提交下一次渲染前生效, 防止快速双击产生两个 mutation.
+      submitLockRef.current = true;
+      setSubmitError(undefined);
+      const elapsedSeconds = (Date.now() - cardStartTime) / 1000;
 
-      if (e.code === 'Space' || e.key === ' ') {
-        e.preventDefault();
+      submitMutation.mutate(
+        {
+          cardId: currentCard.card_id,
+          rating,
+          expectedCardVersion: currentCard.card_version,
+          expectedScheduleVersion: currentCard.schedule_version
+        },
+        {
+          onSuccess: () => {
+            setSummary((previous) => {
+              const reviewedCount = previous.reviewedCount + 1;
+              const totalTimeSeconds = previous.totalTimeSeconds + elapsedSeconds;
+              return {
+                reviewedCount,
+                againCount: previous.againCount + (rating === 'again' ? 1 : 0),
+                hardCount: previous.hardCount + (rating === 'hard' ? 1 : 0),
+                goodCount: previous.goodCount + (rating === 'good' ? 1 : 0),
+                easyCount: previous.easyCount + (rating === 'easy' ? 1 : 0),
+                totalTimeSeconds,
+                averageTimeSeconds: totalTimeSeconds / reviewedCount
+              };
+            });
+
+            if (currentIndex + 1 < queue.length) {
+              setCurrentIndex((index) => index + 1);
+              setIsRevealed(false);
+              setCardStartTime(Date.now());
+            } else {
+              setIsFinished(true);
+            }
+          },
+          onError: (error: unknown) => {
+            if (error instanceof ApiError && error.code === 'version_conflict') {
+              setIsConflictOpen(true);
+              setSubmitError('Card 或调度版本已经变化。请重新加载队列后再评分。');
+              return;
+            }
+            setSubmitError(getApiErrorMessage(error));
+          },
+          onSettled: () => {
+            submitLockRef.current = false;
+          }
+        }
+      );
+    }, [cardStartTime, currentIndex, isRevealed, queue, submitMutation]
+  );
+
+  const handleEscape = useCallback(() => {
+    if (submitMutation.isPending) return;
+    if (isConflictOpen) {
+      setIsConflictOpen(false);
+      return;
+    }
+    // 已确认的评分不能在前端回滚. Esc 只退出本地会话并重新读取服务端状态.
+    void reloadQueue();
+  }, [isConflictOpen, reloadQueue, submitMutation.isPending]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return;
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        handleEscape();
+        return;
+      }
+
+      if (isFinished || queue.length === 0 || submitMutation.isPending) return;
+
+      if (event.code === 'Space' || event.key === ' ') {
+        event.preventDefault();
         if (!isRevealed) handleReveal();
         return;
       }
 
       if (isRevealed) {
-        const rating = RATING_SHORTCUT_MAP[e.key];
-        if (rating) {
-          e.preventDefault();
+        const rating = RATING_SHORTCUT_MAP[event.key];
+        if (rating !== undefined) {
+          event.preventDefault();
           handleRate(rating);
         }
       }
@@ -116,108 +217,159 @@ export const ReviewPage: React.FC = () => {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isRevealed, isFinished, queue.length, handleReveal, handleRate, handleRestart]);
+  }, [handleEscape, handleRate, handleReveal, isFinished, isRevealed, queue.length, submitMutation.isPending]);
 
   const currentCard = queue[currentIndex];
-  const progressPercent =
-    queue.length > 0 ? Math.round(((currentIndex + (isFinished ? 1 : 0)) / queue.length) * 100) : 0;
+  const returnedCount = dueQuery.data?.items.length ?? queue.length;
+  const totalDue = dueQuery.data?.total ?? returnedCount;
+  const completedCount = isFinished ? queue.length : currentIndex;
+  const progressPercent = queue.length > 0 ? Math.round((completedCount / queue.length) * 100) : 0;
+  const isReloading = dueQuery.isFetching;
+
+  let content: React.ReactNode;
+  if (topicsQuery.isPending) {
+    content = <LoadingState title="正在加载 Topic" description="正在获取可用的复习范围。" />;
+  } else if (topicsQuery.isError) {
+    content = (
+      <ErrorState
+        title="Topic 加载失败"
+        description={getApiErrorMessage(topicsQuery.error)}
+        onRetry={() => void topicsQuery.refetch()}
+      />
+    );
+  } else if (dueQuery.isPending || (isReloading && queue.length === 0)) {
+    content = <LoadingState title="正在加载复习队列" description="正在获取当前到期卡片。" />;
+  } else if (dueQuery.isError) {
+    content = (
+      <ErrorState
+        title="复习队列加载失败"
+        description={getApiErrorMessage(dueQuery.error)}
+        onRetry={() => void dueQuery.refetch()}
+      />
+    );
+  } else if (isFinished) {
+    content = (
+      <ReviewSummary
+        summary={summary}
+        onRestart={() => void reloadQueue()}
+        isReloading={isReloading}
+      />
+    );
+  } else if (queue.length === 0 || currentCard === undefined) {
+    content = (
+      <EmptyReview
+        onGoCards={() => navigate('/cards')}
+        onReload={() => void reloadQueue()}
+        isReloading={isReloading}
+      />
+    );
+  } else {
+    content = (
+      <ReviewCardStage
+        card={currentCard}
+        topicName={currentCard.topic_id === null ? undefined : topicNameMap.get(currentCard.topic_id)}
+        isRevealed={isRevealed}
+        isSubmitting={submitMutation.isPending}
+        submitError={submitError}
+        onReveal={handleReveal}
+        onRate={handleRate}
+      />
+    );
+  }
 
   return (
-    <div className="flex min-h-screen bg-surface">
-      <Sidebar currentPath="review" />
-
-      <div className="pl-72 flex-1 flex flex-col min-w-0">
-        {/* 顶部工具栏 */}
-        <header className="h-16 px-gutter flex items-center justify-between border-b border-outline-variant/30 bg-surface-container-lowest/80 backdrop-blur-md sticky top-0 z-40">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[20px] text-primary">filter_alt</span>
-              <span className="font-mono text-[12px] uppercase tracking-wider text-on-surface-variant">
-                复习范围
-              </span>
-            </div>
-            <select
-              value={selectedTopicId}
-              onChange={(e) => handleTopicChange(e.target.value)}
-              className="px-3 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/40 text-on-surface text-[13px] font-medium focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all cursor-pointer"
-            >
-              <option value="">全部 Topic</option>
-              {MOCK_TOPICS.map((t) => (
-                <option key={t.id} value={String(t.id)}>
-                  {t.name} ({t.card_count})
-                </option>
-              ))}
-              <option value="0">无 Topic</option>
-            </select>
+    <div className="flex min-h-[calc(100vh-3.5rem)] flex-col bg-surface lg:min-h-screen">
+      <header className="sticky top-0 z-40 flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-outline-variant/30 bg-surface-container-lowest/80 px-4 py-3 backdrop-blur-md sm:px-gutter">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="hidden items-center gap-2 sm:flex">
+            <span className="material-symbols-outlined text-[20px] text-primary">filter_alt</span>
+            <span className="font-mono text-[12px] uppercase tracking-wider text-on-surface-variant">
+              复习范围
+            </span>
           </div>
+          <select
+            aria-label="复习范围"
+            value={selectedTopicId === null ? '' : String(selectedTopicId)}
+            onChange={(event) => handleTopicChange(event.target.value)}
+            disabled={submitMutation.isPending || topicsQuery.isError}
+            className="max-w-[65vw] cursor-pointer rounded-lg border border-outline-variant/40 bg-surface-container-low px-3 py-1.5 text-[13px] font-medium text-on-surface transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60 sm:max-w-none"
+          >
+            <option value="">全部 Topic</option>
+            {topicsQuery.data?.items.map((topic) => (
+              <option key={topic.id} value={String(topic.id)}>
+                {topic.name} ({topic.card_count})
+              </option>
+            ))}
+            <option value="0">无 Topic</option>
+          </select>
+        </div>
 
-          {/* 队列进度 (total 来自 API, 非本地长度) */}
-          {!isFinished && queue.length > 0 && (
-            <div className="hidden md:flex flex-col items-center">
-              <div className="flex items-center gap-2 font-mono text-[12px] text-on-surface">
-                <span>进度</span>
-                <span className="font-bold text-primary">{currentIndex + 1}</span>
-                <span className="text-on-surface-variant">/ {queue.length}</span>
-              </div>
-              <div className="w-36 h-1.5 bg-surface-container-high rounded-full overflow-hidden mt-1">
-                <div
-                  className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center gap-3">
-            <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded-full bg-surface-container-high/60 border border-outline-variant/30 text-on-surface-variant font-mono text-[11px]">
-              <span className="w-1.5 h-1.5 rounded-full bg-tertiary" />
-              <span>Space 显示答案 · 1~4 评分 · Esc 重置</span>
-            </div>
-            <button
-              onClick={handleRestart}
-              title="重置当前队列"
-              className="p-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors"
-            >
-              <span className="material-symbols-outlined text-[20px]">refresh</span>
-            </button>
-          </div>
-        </header>
-
-        {/* 顶部细进度条 */}
         {!isFinished && queue.length > 0 && (
-          <div className="w-full h-1 bg-surface-container-high overflow-hidden">
-            <div
-              className="h-full bg-primary-container transition-all duration-300 ease-out"
-              style={{ width: `${progressPercent}%` }}
-            />
+          <div className="hidden flex-col items-center md:flex">
+            <div className="flex items-center gap-2 font-mono text-[12px] text-on-surface">
+              <span>本轮</span>
+              <span className="font-bold text-primary">{currentIndex + 1}</span>
+              <span className="text-on-surface-variant">/ {queue.length}</span>
+              {totalDue !== returnedCount && (
+                <span className="text-on-surface-variant">· 到期共 {totalDue}</span>
+              )}
+            </div>
+            <div className="mt-1 h-1.5 w-36 overflow-hidden rounded-full bg-surface-container-high">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
           </div>
         )}
 
-        <main className="flex-1 flex flex-col justify-center px-gutter py-8">
-          {isFinished ? (
-            <ReviewSummary summary={summary} onRestart={handleRestart} />
-          ) : queue.length === 0 ? (
-            <EmptyReview onGoCards={() => {}} onGoBack={handleRestart} />
-          ) : (
-            <ReviewCardStage
-              card={currentCard}
-              topicName={topicNameMap.get(currentCard.topic_id)}
-              isRevealed={isRevealed}
-              onReveal={handleReveal}
-              onRate={handleRate}
-            />
-          )}
-        </main>
-
-        <footer className="h-10 px-gutter flex items-center justify-between border-t border-outline-variant/20 bg-surface-container-lowest/50 text-on-surface-variant font-mono text-[11px]">
-          <div className="flex items-center gap-4">
-            <span>FSRS v6 · go-fsrs/v4</span>
-            <span className="text-outline-variant">•</span>
-            <span>desired_retention 0.9</span>
+        <div className="flex items-center gap-2">
+          <div className="hidden items-center gap-2 rounded-full border border-outline-variant/30 bg-surface-container-high/60 px-2.5 py-1 font-mono text-[11px] text-on-surface-variant xl:flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-tertiary" />
+            <span>Space 显示答案 · 1 Again · 2 Hard · 3 Good · 4 Easy · Esc 重新加载</span>
           </div>
-          <span>Precision Cognition</span>
-        </footer>
-      </div>
+          <button
+            type="button"
+            onClick={() => void reloadQueue()}
+            disabled={submitMutation.isPending || isReloading}
+            aria-label="重新加载队列"
+            title="重新加载队列"
+            className="rounded-lg p-2 text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className={`material-symbols-outlined text-[20px] ${isReloading ? 'animate-spin' : ''}`}>
+              {isReloading ? 'progress_activity' : 'refresh'}
+            </span>
+          </button>
+        </div>
+      </header>
+
+      {!isFinished && queue.length > 0 && (
+        <div className="h-1 w-full overflow-hidden bg-surface-container-high">
+          <div
+            className="h-full bg-primary-container transition-all duration-300 ease-out"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+      )}
+
+      <main className="flex flex-1 flex-col justify-center px-4 py-8 sm:px-gutter">{content}</main>
+
+      <footer className="flex min-h-10 flex-wrap items-center justify-between gap-2 border-t border-outline-variant/20 bg-surface-container-lowest/50 px-4 py-2 font-mono text-[11px] text-on-surface-variant sm:px-gutter">
+        <span>
+          已加载 {returnedCount} 张{totalDue !== returnedCount ? ` / 到期共 ${totalDue} 张` : ''}
+        </span>
+        <span>Precision Cognition</span>
+      </footer>
+
+      <ConflictDialog
+        open={isConflictOpen}
+        title="复习版本冲突"
+        description="Card 或调度版本已经变化，当前评分没有提交。请重新加载队列获取最新版本；系统不会自动重复提交。"
+        closeLabel="保留当前卡片"
+        reloadLabel="重新加载队列"
+        onClose={() => setIsConflictOpen(false)}
+        onReload={() => void reloadQueue()}
+      />
     </div>
   );
 };

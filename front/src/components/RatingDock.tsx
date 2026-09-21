@@ -12,11 +12,8 @@ interface RatingDockProps {
 }
 
 /**
- * FSRS 四档评分栏.
- * 展示顺序为难度升序 (简单 → 良好 → 困难 → 忘记), 快捷键数字跟随展示顺序:
- * 简单=1, 良好=2, 困难=3, 忘记=4.
- * 说明: API (5.10 POST /api/web/review/{card_id}/submit) 只接受 rating 字符串,
- * 响应才返回新的 schedule. 复习队列接口不提供任何"下次间隔预览", 故不展示预估间隔.
+ * FSRS 四档评分栏. 后端只接收 rating 字符串, 当前队列接口不返回评分前间隔预览,
+ * 因此这里只展示 Again、Hard、Good、Easy 及对应快捷键.
  */
 export const RatingDock: React.FC<RatingDockProps> = ({ onRate, disabled = false }) => {
   return (
@@ -27,11 +24,12 @@ export const RatingDock: React.FC<RatingDockProps> = ({ onRate, disabled = false
           return (
             <button
               key={type}
+              type="button"
+              aria-label={`${getRatingShortcut(type)} ${meta.label} ${meta.english}`}
               disabled={disabled}
               onClick={() => onRate(type)}
-              className={`relative flex flex-col items-center justify-center py-3.5 px-3 rounded-xl border ${meta.bgClass} ${meta.borderClass} ${meta.textClass} ${meta.hoverClass} hover:shadow-sm active:scale-[0.99] transition-all duration-150 cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed`}
+              className={`relative flex flex-col items-center justify-center py-3.5 px-3 rounded-xl border ${meta.bgClass} ${meta.borderClass} ${meta.textClass} ${meta.hoverClass} hover:shadow-sm active:scale-[0.99] transition-all duration-150 cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100`}
             >
-              {/* 快捷键键帽 (label-sm / JetBrains Mono) */}
               <span className="absolute top-2 right-2 w-5 h-5 rounded flex items-center justify-center font-mono text-[11px] font-semibold bg-white/70 border border-outline-variant/40">
                 {getRatingShortcut(type)}
               </span>
@@ -49,16 +47,22 @@ export const RatingDock: React.FC<RatingDockProps> = ({ onRate, disabled = false
       </div>
 
       <p className="text-center font-mono text-[11px] text-on-surface-variant mt-3">
-        按{' '}
-        {FSRS_RATING_ORDER.map((type, index) => (
-          <React.Fragment key={type}>
-            {index > 0 && <span className="mx-1 text-outline-variant">·</span>}
-            <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface font-semibold border border-outline-variant/40">
-              {getRatingShortcut(type)}
-            </kbd>
-            {FSRS_RATING_META[type].label}
-          </React.Fragment>
-        ))}
+        {disabled ? (
+          '正在提交评分，请稍候'
+        ) : (
+          <>
+            按{' '}
+            {FSRS_RATING_ORDER.map((type, index) => (
+              <React.Fragment key={type}>
+                {index > 0 && <span className="mx-1 text-outline-variant">·</span>}
+                <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface font-semibold border border-outline-variant/40">
+                  {getRatingShortcut(type)}
+                </kbd>
+                {FSRS_RATING_META[type].label}
+              </React.Fragment>
+            ))}
+          </>
+        )}
       </p>
     </div>
   );
