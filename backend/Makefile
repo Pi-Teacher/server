@@ -9,17 +9,31 @@ BIN_DIR     := bin
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS     := -s -w -X github.com/Pi-Teacher/server/internal/platform/version.Version=$(VERSION)
 
+# WebUI 内嵌路径: 前端子项目与 go:embed 读取的产物目录.
+FRONT_DIR   := ../front
+WEBUI_DIST  := internal/delivery/http/webui/dist
+
 DB_DRIVER ?= sqlite
 DB_DSN    ?= ./data/pi-teacher.db
 
-.PHONY: help build test test-race test-mysql test-postgres lint fmt vet staticcheck migrate run clean tidy
+.PHONY: help build build-backend webui test test-race test-mysql test-postgres lint fmt vet staticcheck migrate run clean tidy
 
 help: ## 显示帮助.
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
-build: ## 构建服务端二进制到 ./bin.
+build: webui ## 构建含 WebUI 的完整服务端二进制到 ./bin.
 	GOTOOLCHAIN=go1.26.7 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) $(CMD)
+
+build-backend: ## 仅构建服务端 (跳过 WebUI, 用于不含前端产物的快速编译).
+	GOTOOLCHAIN=go1.26.7 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) $(CMD)
+
+webui: ## 构建前端并把产物复制进 go:embed 目录.
+	@test -d $(FRONT_DIR)/node_modules || { echo "缺少 $(FRONT_DIR)/node_modules, 请先执行: cd $(FRONT_DIR) && npm install"; exit 1; }
+	cd $(FRONT_DIR) && npm run build
+	find $(WEBUI_DIST) -mindepth 1 ! -name '.gitkeep' ! -name '.gitignore' -delete
+	cp -R $(FRONT_DIR)/dist/. $(WEBUI_DIST)/
+	@echo "✓ 已复制前端产物到 $(WEBUI_DIST)"
 
 test: ## 运行全部单元与集成测试 (SQLite).
 	GOTOOLCHAIN=go1.26.7 go test ./...
@@ -57,3 +71,5 @@ run: ## 以本地默认配置启动服务.
 
 clean: ## 清理构建产物.
 	rm -rf $(BIN_DIR)
+	find $(WEBUI_DIST) -mindepth 1 ! -name '.gitkeep' ! -name '.gitignore' -delete
+	@echo "✓ 已清理 $(BIN_DIR) 与 $(WEBUI_DIST) 构建产物"

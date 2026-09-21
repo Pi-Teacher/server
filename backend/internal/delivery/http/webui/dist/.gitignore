@@ -1,0 +1,5 @@
+# 本目录内容由 `make build` 从 ../../../front/dist 复制生成, 属于构建产物不入库.
+# 只保留 .gitkeep (保证前端未构建时 go:embed 仍有可嵌入文件) 与这份规则本身.
+*
+!.gitkeep
+!.gitignore

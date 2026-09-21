@@ -8,6 +8,9 @@ node_modules/
 front/dist/
 *.tsbuildinfo
 
+# backend build artifacts
+backend/bin/
+
 # documents (private until docs are ready for open source)
 *.md
 *.mmd

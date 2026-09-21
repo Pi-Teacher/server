@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Pi-Teacher/server/internal/application/apperr"
 	"github.com/Pi-Teacher/server/internal/application/appsvc"
+	"github.com/Pi-Teacher/server/internal/delivery/http/webui"
 	"github.com/Pi-Teacher/server/internal/infrastructure/persistence/model"
 	"github.com/Pi-Teacher/server/internal/infrastructure/persistence/repo"
 	"github.com/Pi-Teacher/server/internal/platform/version"
@@ -179,9 +179,10 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	mux.Handle("POST /api/web/trash/glossary/batch-delete", s.requireWebSession(http.HandlerFunc(s.handleBatchDeleteTrashedGlossary)))
 	mux.Handle("POST /api/web/trash/empty", s.requireWebSession(http.HandlerFunc(s.handleEmptyTrash)))
 
-	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeError(w, apperr.NotFound("路由不存在"))
-	}))
+	// 非 /api 路径交给内嵌 WebUI: 命中静态资源直接返回, 未命中的
+	// 无扩展名路径 fallback 到 index.html, 支持 React Router 深链刷新.
+	// /api 命名空间下的未命中仍返回统一 JSON 错误信封.
+	mux.Handle("/", newSPAHandler(webui.Dist(), cfg.Logger))
 
 	var handler http.Handler = mux
 	handler = withRecovery(cfg.Logger, handler)
