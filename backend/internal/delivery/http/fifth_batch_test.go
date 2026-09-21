@@ -211,27 +211,34 @@ func TestFifthBatchRetryFailed(t *testing.T) {
 	}
 }
 
-// TestFifthBatchCheckExact 覆盖 enable_embedding=false 的精确查重:
+// TestFifthBatchCheckExact 覆盖跨 embedding 开关的全局精确查重:
 // 同 front (含大小写/全角归一) 命中, 不同 front 不命中.
 func TestFifthBatchCheckExact(t *testing.T) {
 	ts := newTestServer(t)
 	csrf := ts.login()
 
-	// 建一张不启用 embedding 的卡.
+	// 分别创建关闭和启用 embedding 的卡, 验证 exact 不按开关分区.
 	resp := ts.do(http.MethodPost, "/api/web/cards", map[string]any{
 		"front": "New York 的地铁", "back": "subway", "enable_embedding": false,
 	}, map[string]string{"X-CSRF-Token": csrf})
 	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("create card = %d, want 201", resp.StatusCode)
+		t.Fatalf("create disabled card = %d, want 201", resp.StatusCode)
 	}
-	var created cardDetailLite
-	decodeBody(t, resp, &created)
+	var disabled cardDetailLite
+	decodeBody(t, resp, &disabled)
+	resp = ts.do(http.MethodPost, "/api/web/cards", map[string]any{
+		"front": "ＮＥＷ ＹＯＲＫ 的地铁", "back": "metro", "enable_embedding": true,
+	}, map[string]string{"X-CSRF-Token": csrf})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create enabled card = %d, want 201", resp.StatusCode)
+	}
+	var enabled cardDetailLite
+	decodeBody(t, resp, &enabled)
 
-	// 大小写不同的同 front 应命中 exact.
-	check := func(front string) checkResponseLite {
+	check := func(front string, enableEmbedding bool) checkResponseLite {
 		t.Helper()
 		resp := ts.do(http.MethodPost, "/api/cli/cards/check", map[string]any{
-			"front": front, "enable_embedding": false,
+			"front": front, "enable_embedding": enableEmbedding,
 		}, map[string]string{"Authorization": "Bearer " + ts.makeAPIKey(t, csrf), "Idempotency-Key": "check-" + front})
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("check %q = %d, want 200", front, resp.StatusCode)
@@ -241,18 +248,26 @@ func TestFifthBatchCheckExact(t *testing.T) {
 		return out
 	}
 
-	hit := check("new york 的地铁")
-	if hit.MatchType != "exact" {
-		t.Fatalf("match_type = %q, want exact", hit.MatchType)
+	before := ts.provider.callCount()
+	for _, enableEmbedding := range []bool{false, true} {
+		hit := check("new york 的地铁", enableEmbedding)
+		if hit.MatchType != "exact" {
+			t.Fatalf("match_type = %q, want exact", hit.MatchType)
+		}
+		if len(hit.Matches) != 2 || hit.Matches[0].ID != disabled.ID || hit.Matches[1].ID != enabled.ID {
+			t.Fatalf("matches = %+v, want both cards in id order", hit.Matches)
+		}
+		for _, match := range hit.Matches {
+			if match.Similarity != nil {
+				t.Fatal("exact match must not carry similarity")
+			}
+		}
 	}
-	if len(hit.Matches) != 1 || hit.Matches[0].ID != created.ID {
-		t.Fatalf("matches = %+v, want the created card", hit.Matches)
-	}
-	if hit.Matches[0].Similarity != nil {
-		t.Fatal("exact match must not carry similarity")
+	if calls := ts.provider.callCount(); calls != before {
+		t.Fatalf("exact hit called provider: before=%d after=%d", before, calls)
 	}
 
-	miss := check("北京的地铁")
+	miss := check("北京的地铁", false)
 	if len(miss.Matches) != 0 {
 		t.Fatalf("expected no match, got %+v", miss.Matches)
 	}
@@ -276,7 +291,7 @@ func TestFifthBatchCheckSemantic(t *testing.T) {
 
 	apiKey := ts.makeAPIKey(t, csrf)
 	resp := ts.do(http.MethodPost, "/api/cli/cards/check", map[string]any{
-		"front": "goroutine 是什么?", "enable_embedding": true, "top_k": 1,
+		"front": "请解释 goroutine", "enable_embedding": true, "top_k": 1,
 	}, map[string]string{"Authorization": "Bearer " + apiKey, "Idempotency-Key": "sem-1"})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("semantic check = %d, want 200", resp.StatusCode)
@@ -296,13 +311,30 @@ func TestFifthBatchCheckSemantic(t *testing.T) {
 		t.Fatal("semantic match must carry similarity")
 	}
 
-	// 关闭相似度后应返回 409 similarity_disabled.
+	// 关闭相似度后, exact 命中仍应成功且不调用 provider; 只有 exact 未命中
+	// 才返回 409 similarity_disabled.
 	ts.setBoolSetting(t, csrf, "embedding_similarity_enabled", false)
+	before := ts.provider.callCount()
 	resp = ts.do(http.MethodPost, "/api/cli/cards/check", map[string]any{
 		"front": "goroutine 是什么?", "enable_embedding": true,
+	}, map[string]string{"Authorization": "Bearer " + apiKey, "Idempotency-Key": "sem-exact-disabled"})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("disabled exact check = %d, want 200", resp.StatusCode)
+	}
+	var exact checkResponseLite
+	decodeBody(t, resp, &exact)
+	if exact.MatchType != "exact" || len(exact.Matches) != 1 {
+		t.Fatalf("disabled exact result = %+v", exact)
+	}
+	if calls := ts.provider.callCount(); calls != before {
+		t.Fatalf("disabled exact called provider: before=%d after=%d", before, calls)
+	}
+
+	resp = ts.do(http.MethodPost, "/api/cli/cards/check", map[string]any{
+		"front": "请解释 goroutine", "enable_embedding": true,
 	}, map[string]string{"Authorization": "Bearer " + apiKey, "Idempotency-Key": "sem-2"})
 	if resp.StatusCode != http.StatusConflict {
-		t.Fatalf("disabled check = %d, want 409", resp.StatusCode)
+		t.Fatalf("disabled semantic check = %d, want 409", resp.StatusCode)
 	}
 	var errBody struct {
 		Error struct {

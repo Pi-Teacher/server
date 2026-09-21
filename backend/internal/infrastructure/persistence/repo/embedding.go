@@ -202,8 +202,8 @@ func (r *CardRepository) ResetFailedEmbedding(ctx context.Context, _ time.Time) 
 	return res.RowsAffected, res.Error
 }
 
-// ExactCandidate 是非向量查重的候选: 同 front 指纹的未启用 embedding 卡.
-// 只取响应需要的列, 不读 embedding BLOB.
+// ExactCandidate 是全局精确查重候选: 所有同 front 指纹的正常 Card,
+// 不区分 enable_embedding. 只取响应需要的列, 不读 embedding BLOB.
 type ExactCandidate struct {
 	ID      int64
 	Front   string
@@ -211,14 +211,14 @@ type ExactCandidate struct {
 	TopicID *int64
 }
 
-// FindExactCandidates 用 (front_fingerprint, enable_embedding) 索引召回
-// enable_embedding=false 的同指纹卡. 指纹是初筛, 调用方必须再用完整
-// canonical front 复核, 排除 64-bit 理论碰撞.
+// FindExactCandidates 按 front_fingerprint 召回全部正常 Card.
+// 现有复合索引以 front_fingerprint 为首列, 可直接支持该查询. 指纹只是
+// 初筛, 调用方必须再用完整 canonical front 复核, 排除 64-bit 理论碰撞.
 func (r *CardRepository) FindExactCandidates(ctx context.Context, fingerprint []byte) ([]ExactCandidate, error) {
 	rows := make([]ExactCandidate, 0, 8)
 	err := r.db.WithContext(ctx).Model(&model.Card{}).
 		Select("id, front, back, topic_id").
-		Where("front_fingerprint = ? AND enable_embedding = ?", fingerprint, false).
+		Where("front_fingerprint = ?", fingerprint).
 		Order("id ASC").
 		Find(&rows).Error
 	if err != nil {

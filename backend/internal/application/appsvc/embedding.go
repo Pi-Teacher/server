@@ -335,23 +335,28 @@ type CheckResult struct {
 
 // Check 执行 dry-run 查重: 不写库, 不产审批.
 //
-// enable_embedding=false: 用 (front_fingerprint, enable_embedding) 索引召回
-// 同指纹卡, 再用完整 canonical front 复核排除哈希碰撞.
-// enable_embedding=true: 同步生成查询向量, 遍历 ready 卡算 cosine 取 top-K.
-// 相似度能力未开放返回 409 similarity_disabled (带 coverage);
+// 所有请求先按 front_fingerprint 召回全部正常 Card, 再用完整 canonical
+// front 复核排除哈希碰撞. exact 命中时直接返回, 不调用 embedding provider.
+// exact 未命中且 enable_embedding=false 时返回空 exact 结果;
+// exact 未命中且 enable_embedding=true 时才生成查询向量, 遍历 ready 卡
+// 计算 cosine top-K. 此时相似度能力未开放返回 409 similarity_disabled,
 // 查询向量生成失败返回 503 embedding_unavailable.
 func (s *EmbeddingService) Check(ctx context.Context, input CheckInput) (*CheckResult, error) {
 	front, err := validateContent("front", input.Front)
 	if err != nil {
 		return nil, err
 	}
-	if !input.EnableEmbedding {
-		return s.checkExact(ctx, front)
+	exact, err := s.checkExact(ctx, front)
+	if err != nil {
+		return nil, err
+	}
+	if len(exact.Matches) > 0 || !input.EnableEmbedding {
+		return exact, nil
 	}
 	return s.checkSemantic(ctx, front, normalizeTopK(input.TopK))
 }
 
-// checkExact 用指纹索引召回并在 Go 中完整复核.
+// checkExact 用指纹索引跨全部正常 Card 召回, 并在 Go 中完整复核.
 func (s *EmbeddingService) checkExact(ctx context.Context, front string) (*CheckResult, error) {
 	canonical := card.CanonicalFront(front)
 	candidates, err := s.cards.FindExactCandidates(ctx, card.FrontFingerprint(front))
