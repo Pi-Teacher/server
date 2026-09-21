@@ -10,6 +10,7 @@ import { GeneralSettingsPage } from './features/settings/GeneralSettingsPage';
 import { AppShell } from './layout/AppShell';
 import { SettingsLayout } from './layout/SettingsLayout';
 import { CardsPage } from './pages/CardsPage';
+import { ApprovalsPage } from './pages/ApprovalsPage';
 import { GlossaryPage } from './pages/GlossaryPage';
 import { LoginPage } from './pages/LoginPage';
 import { LogsPage } from './pages/LogsPage';
@@ -28,7 +29,7 @@ export const App: React.FC = () => (
         <Route path="cards" element={<CardsPage />} />
         <Route path="topics" element={<TopicsPage />} />
         <Route path="glossary" element={<GlossaryPage />} />
-        <Route path="approvals" element={<PlaceholderPage phase="阶段 6" title="提案审批" description="查看并处理 CLI 提交的待审批提案。" />} />
+        <Route path="approvals" element={<ApprovalsPage />} />
         <Route path="approval-switches" element={<ApprovalsSettingsPage />} />
         <Route path="logs" element={<LogsPage />} />
         <Route path="trash" element={<PlaceholderPage phase="阶段 4" title="回收站" description="恢复或永久删除 Card、Topic 和 Glossary。" />} />
