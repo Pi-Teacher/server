@@ -26,6 +26,13 @@ const statusPresentation: Record<
 
 const formatUpdatedAt = formatDateTime;
 
+// 列轨道必须与每行的单元格数一致 (选择/内容/Topic/Embedding/Version/更新时间/操作 = 7 列),
+// 否则多出的单元格会被挤到隐式行, 与表头错列。
+// 较窄桌面 (lg) 隐藏 Version 与更新时间两列 (仍可在详情与编辑弹窗查看), 到 xl 再加回来;
+// 其余列用 minmax 让长内容自行收缩, 避免固定宽度在侧栏旁被挤压。
+const gridClass =
+  'lg:grid-cols-[2.25rem_minmax(0,1fr)_minmax(0,9rem)_7rem_5.5rem] xl:grid-cols-[2.25rem_minmax(0,1fr)_minmax(0,9rem)_7rem_4.5rem_minmax(0,8.5rem)_5.5rem]';
+
 const CardRow: React.FC<{
   card: CardListItem;
   topicName?: string;
@@ -46,7 +53,7 @@ const CardRow: React.FC<{
   const status = statusPresentation[card.embedding_status];
   return (
     <article
-      className={`grid gap-3 px-4 py-4 transition-colors sm:px-5 lg:grid-cols-[2.5rem_minmax(0,1fr)_11rem_8rem_5rem_11rem_5.5rem] lg:items-center lg:gap-4 lg:py-3 ${
+      className={`grid gap-3 px-4 py-4 transition-colors sm:px-5 lg:items-center lg:gap-3 lg:py-3 ${gridClass} ${
         selected ? 'bg-primary-fixed/35' : 'hover:bg-surface-container-low/70'
       }`}
     >
@@ -91,14 +98,14 @@ const CardRow: React.FC<{
         <Badge tone={status.tone}>{status.label}</Badge>
       </div>
 
-      <div className="flex items-center justify-between gap-3 lg:block">
+      <div className="flex items-center justify-between gap-3 lg:hidden xl:block">
         <span className="font-mono text-[11px] uppercase tracking-wider text-on-surface-variant lg:hidden">
           Version
         </span>
         <span className="font-mono text-[12px] text-on-surface">v{card.version}</span>
       </div>
 
-      <div className="flex items-center justify-between gap-3 lg:block lg:text-right">
+      <div className="flex items-center justify-between gap-3 lg:hidden xl:block lg:text-right">
         <span className="font-mono text-[11px] uppercase tracking-wider text-on-surface-variant lg:hidden">
           更新时间
         </span>
@@ -142,15 +149,19 @@ export const CardList: React.FC<CardListProps> = ({
   onEdit,
   onTrash
 }) => (
-  <section className="overflow-hidden rounded-2xl border border-outline-variant/35 bg-surface-container-lowest shadow-subtle">
-    <div className="hidden grid-cols-[2.5rem_minmax(0,1fr)_11rem_8rem_5rem_11rem_5.5rem] gap-4 border-b border-outline-variant/30 bg-surface-container-low/75 px-5 py-2.5 font-mono text-[11px] uppercase tracking-wider text-on-surface-variant lg:grid">
-      <span className="sr-only">选择</span>
+  <section aria-label="Card 列表" className="overflow-hidden rounded-2xl border border-outline-variant/35 bg-surface-container-lowest shadow-subtle">
+    <div
+      className={`hidden gap-3 border-b border-outline-variant/30 bg-surface-container-low/75 px-5 py-2.5 font-mono text-[11px] uppercase tracking-wider text-on-surface-variant lg:grid ${gridClass}`}
+    >
+      {/* 占位单元格必须真实留在 grid 流中: sr-only 是 position:absolute,
+          会被移出自动排布, 导致表头后面的列全部向左错位一格。 */}
+      <span aria-hidden="true" />
       <span>Front / Back</span>
       <span>Topic</span>
       <span>Embedding</span>
-      <span>Version</span>
-      <span className="text-right">更新时间</span>
-      <span className="sr-only">操作</span>
+      <span aria-hidden="true" className="hidden xl:block">Version</span>
+      <span aria-hidden="true" className="hidden text-right xl:block">更新时间</span>
+      <span aria-hidden="true" />
     </div>
     <div className="divide-y divide-outline-variant/25">
       {cards.map((card) => (

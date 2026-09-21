@@ -175,6 +175,26 @@ describe('CardsPage', () => {
     expect(await screen.findByText('没有符合条件的卡片')).toBeInTheDocument();
   });
 
+  it('表头列数与数据行单元格数一致, 且不使用会被移出 grid 的 sr-only 占位', async () => {
+    mockTopicsAndCards();
+    renderCardsPage();
+    await screen.findByText('Go slice 的底层结构是什么?');
+
+    const list = screen.getByRole('region', { name: 'Card 列表' });
+    const header = list.querySelector('.lg\\:grid');
+    const row = list.querySelector('article');
+    expect(header).not.toBeNull();
+    expect(row).not.toBeNull();
+    const headerCells = Array.from(header?.children ?? []) as HTMLElement[];
+    // sr-only 是 position:absolute, 会把表头标签移出自动排布, 导致整体错列。
+    expect(headerCells.some((cell) => cell.className.includes('sr-only'))).toBe(false);
+    expect(row?.childElementCount).toBe(header?.childElementCount);
+    // 最宽断点的网格轨道数必须等于单元格数。
+    const templates = (header?.className ?? '').match(/grid-cols-\[([^\]]+)\]/g) ?? [];
+    const trackCounts = templates.map((t) => /\[([^\]]+)\]/.exec(t)?.[1].split('_').length ?? 0);
+    expect(Math.max(...trackCounts)).toBe(row?.childElementCount);
+  });
+
   it('显示错误并支持重新加载', async () => {
     let cardsCalls = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
