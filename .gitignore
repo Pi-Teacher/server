@@ -1,6 +1,11 @@
 # dependencies
 node_modules/
 
+# local environment (may contain database credentials)
+.env
+.env.*
+!.env.example
+
 # test
 .test/
 
@@ -11,6 +16,10 @@ front/dist/
 # backend build artifacts
 backend/bin/
 
+# Docker Compose local database directory
+/data/
+
 # documents (private until docs are ready for open source)
 *.md
+!/README.md
 *.mmd

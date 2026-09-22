@@ -1,0 +1,15 @@
+services:
+  pi-teacher:
+    image: ghcr.io/pi-teacher/server:${PI_TEACHER_VERSION:-latest}
+    container_name: pi-teacher-server
+    restart: unless-stopped
+    # 服务端收到 SIGTERM 后最多等待 15 秒优雅退出, Compose 多留 5 秒余量.
+    stop_grace_period: 20s
+    ports:
+      - "${PI_TEACHER_PORT:-3333}:3333"
+    environment:
+      PI_TEACHER_DB_DRIVER: ${PI_TEACHER_DB_DRIVER:-sqlite}
+      PI_TEACHER_DB_DSN: ${PI_TEACHER_DB_DSN:-/data/pi-teacher.db}
+      PI_TEACHER_LISTEN: ":3333"
+    volumes:
+      - ./data:/data
