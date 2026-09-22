@@ -9,6 +9,14 @@ node_modules/
 # test
 .test/
 
+# local dev sandbox: database, logs, pid files, local binaries
+.dev/
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.pid
+
 # frontend build artifacts
 front/dist/
 *.tsbuildinfo

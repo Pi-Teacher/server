@@ -273,4 +273,6 @@ ghcr.io/pi-teacher/server:latest
 
 ## License
 
-项目暂未添加开源许可证。在许可证明确前，请不要假定可以重新分发或修改后发布。
+本项目基于 [MIT License](LICENSE) 开源。
+
+Copyright (c) 2026 Pi-Teacher
