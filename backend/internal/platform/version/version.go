@@ -5,4 +5,4 @@ package version
 // 发布构建时通过链接参数覆盖, 源码里的值仅作开发期兜底:
 //
 //	go build -ldflags "-X github.com/Pi-Teacher/server/internal/platform/version.Version=1.2.3"
-var Version = "1.0.0"
+var Version = "1.0.1"

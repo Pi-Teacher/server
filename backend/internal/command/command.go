@@ -15,11 +15,17 @@ var ErrUsage = errors.New("用法错误")
 const usage = `pi-teacher-server — Pi Teacher 单实例服务端
 
 用法:
-  pi-teacher-server serve   [--db-driver sqlite|mysql|postgres] --db-dsn DSN [--listen :8080] [--set key=value ...]
-  pi-teacher-server migrate [--db-driver ...] --db-dsn DSN
-  pi-teacher-server admin reset-password [--db-driver ...] --db-dsn DSN
+  pi-teacher-server serve   [--db-driver sqlite|mysql|postgres] [--db-dsn DSN] [--listen :3333] [--set key=value ...]
+  pi-teacher-server migrate [--db-driver ...] [--db-dsn DSN]
+  pi-teacher-server admin reset-password [--db-driver ...] [--db-dsn DSN]
+
+环境变量:
+  PI_TEACHER_DB_DRIVER  数据库驱动, 默认 sqlite
+  PI_TEACHER_DB_DSN     数据库 DSN 或 SQLite 文件路径
+  PI_TEACHER_LISTEN     HTTP 监听地址, 默认 :3333
 
 说明:
+  命令行参数优先于环境变量.
   serve     启动 HTTP 服务, 执行迁移并初始化账号与设置
   migrate   只执行数据库迁移后退出
   admin     本机管理命令 (不做 HTTP 鉴权, 安全边界为操作系统权限)`

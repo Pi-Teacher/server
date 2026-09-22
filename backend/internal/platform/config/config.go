@@ -1,22 +1,32 @@
 // Package config 解析 pi-teacher-server 的启动配置.
 //
-// 数据库驱动, DSN 和监听地址必须在连接数据库之前确定, 因此它们是命令行
-// 参数而不是 setting_keys 里的运行期设置. --set 可以重复出现, 只携带本次
-// 启动显式给出的设置项, 迁移完成后才写入数据库, 未出现的 key 保持原值.
+// 数据库驱动, DSN 和监听地址必须在连接数据库之前确定, 因此通过命令行
+// 参数或 PI_TEACHER_* 环境变量配置, 而不是 setting_keys 里的运行期设置.
+// 命令行优先于环境变量, --set 可以重复出现并只携带本次启动显式给出的设置项.
 package config
 
 import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 )
 
-// Driver names 是 --db-driver 接受的取值.
+// Driver names 是 --db-driver 与 PI_TEACHER_DB_DRIVER 接受的取值.
 const (
 	DriverSQLite   = "sqlite"
 	DriverMySQL    = "mysql"
 	DriverPostgres = "postgres"
+)
+
+// 环境变量与内置默认值统一定义在配置层, CLI 与容器运行使用同一套语义.
+const (
+	EnvDBDriver = "PI_TEACHER_DB_DRIVER"
+	EnvDBDSN    = "PI_TEACHER_DB_DSN"
+	EnvListen   = "PI_TEACHER_LISTEN"
+
+	DefaultListen = ":3333"
 )
 
 // Config 是解析完成的启动配置.
@@ -55,9 +65,9 @@ func Parse(args []string) (*Config, error) {
 		listen string
 		raws   stringList
 	)
-	fs.StringVar(&driver, "db-driver", DriverSQLite, "database driver: sqlite|mysql|postgres")
-	fs.StringVar(&dsn, "db-dsn", "", "database DSN or SQLite file path")
-	fs.StringVar(&listen, "listen", ":8080", "HTTP listen address")
+	fs.StringVar(&driver, "db-driver", envOrDefault(EnvDBDriver, DriverSQLite), "database driver: sqlite|mysql|postgres")
+	fs.StringVar(&dsn, "db-dsn", strings.TrimSpace(os.Getenv(EnvDBDSN)), "database DSN or SQLite file path")
+	fs.StringVar(&listen, "listen", envOrDefault(EnvListen, DefaultListen), "HTTP listen address")
 	fs.Var(&raws, "set", "persist a setting: --set key=value (repeatable)")
 
 	if err := fs.Parse(args); err != nil {
@@ -104,3 +114,11 @@ type discardWriter struct{}
 func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
 
 func newDiscardWriter() discardWriter { return discardWriter{} }
+
+// envOrDefault 返回去除首尾空白后的环境变量; 未设置或仅空白时使用默认值.
+func envOrDefault(key, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+		return value
+	}
+	return fallback
+}

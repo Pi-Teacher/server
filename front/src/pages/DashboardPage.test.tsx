@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { todayInTimezone } from '../utils/heatmap';
 import { DASHBOARD_QUOTES } from '../features/dashboard/dashboardQuotes';
 import { DashboardPage } from './DashboardPage';
@@ -20,8 +20,10 @@ interface MockResponse {
   body: unknown;
 }
 
-// 设置返回 UTC, 前端 today 即 UTC 自然日; 测试用同一函数推导期望值。
-const TODAY = todayInTimezone('UTC');
+// 固定在 UTC 与本地时区自然日相同的中午, 避免跨午夜时组件先用浏览器时区、
+// 设置加载后再切 UTC, 触发第二轮 calendar 查询导致用例随机失败。
+const TEST_NOW = new Date('2026-06-15T12:00:00Z');
+const TODAY = todayInTimezone('UTC', TEST_NOW);
 
 const settingsResponse = {
   settings: {
@@ -99,7 +101,12 @@ const mockDashboard = () =>
 const heatmapRegion = () => screen.getByRole('region', { name: '学习热力图' });
 
 describe('DashboardPage', () => {
+  beforeEach(() => {
+    vi.setSystemTime(TEST_NOW);
+  });
+
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 

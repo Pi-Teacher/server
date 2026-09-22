@@ -15,6 +15,7 @@ WEBUI_DIST  := internal/delivery/http/webui/dist
 
 DB_DRIVER ?= sqlite
 DB_DSN    ?= ./data/pi-teacher.db
+LISTEN    ?= :3333
 
 .PHONY: help build build-backend webui test test-race test-mysql test-postgres lint fmt vet staticcheck migrate run clean tidy
 
@@ -67,7 +68,7 @@ migrate: ## 按 DB_DRIVER/DB_DSN 执行迁移.
 	GOTOOLCHAIN=go1.26.7 go run $(CMD) migrate --db-driver $(DB_DRIVER) --db-dsn "$(DB_DSN)"
 
 run: ## 以本地默认配置启动服务.
-	GOTOOLCHAIN=go1.26.7 go run $(CMD) serve --db-driver $(DB_DRIVER) --db-dsn "$(DB_DSN)" --listen :8080
+	GOTOOLCHAIN=go1.26.7 go run $(CMD) serve --db-driver $(DB_DRIVER) --db-dsn "$(DB_DSN)" --listen "$(LISTEN)"
 
 clean: ## 清理构建产物.
 	rm -rf $(BIN_DIR)

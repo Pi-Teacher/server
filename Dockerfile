@@ -40,24 +40,27 @@ FROM alpine:3.21
 
 # ca-certificates: 调用外部 embedding API (HTTPS) 需要根证书.
 # tzdata: 日历按 calendar_timezone 归属自然日, 需要时区数据库.
-# 以非 root 用户运行, 并以 /data 作为默认可写数据目录 (SQLite 文件落在这里).
+# 容器按用户要求直接使用 root, 让宿主机挂载的数据目录无需额外处理 UID/GID.
 RUN apk add --no-cache ca-certificates tzdata wget \
- && adduser -D -H -u 10001 pi \
- && mkdir -p /data \
- && chown pi:pi /data
+ && mkdir -p /data
 
 COPY --from=backend /out/pi-teacher-server /usr/local/bin/pi-teacher-server
 
-USER pi
+# CLI 参数优先于这些默认环境变量; 部署时可用 `docker run -e ...` 覆盖,
+# 例如切换到 MySQL/PostgreSQL 或修改数据库 DSN 与监听地址.
+ENV PI_TEACHER_DB_DRIVER=sqlite \
+    PI_TEACHER_DB_DSN=/data/pi-teacher.db \
+    PI_TEACHER_LISTEN=:3333
+
 WORKDIR /data
 VOLUME ["/data"]
 
-EXPOSE 8080
+EXPOSE 3333
 
 # /api/health 无需认证, 适合作为存活探针.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8080/api/health >/dev/null 2>&1 || exit 1
+  CMD wget -qO- http://127.0.0.1:3333/api/health >/dev/null 2>&1 || exit 1
 
+# ENTRYPOINT 只固定可执行文件, 运行配置完全由 CLI 参数或 PI_TEACHER_* 环境变量提供.
 ENTRYPOINT ["/usr/local/bin/pi-teacher-server"]
-# 容器内必须监听 0.0.0.0 才能被端口映射访问; 数据落在挂载卷 /data.
-CMD ["serve", "--db-driver", "sqlite", "--db-dsn", "/data/pi-teacher.db", "--listen", ":8080"]
+CMD ["serve"]

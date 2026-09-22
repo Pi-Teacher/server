@@ -1,4 +1,4 @@
-const baseURL = (process.env.PI_TEACHER_DEV_BASE_URL ?? 'http://127.0.0.1:8080').replace(/\/$/, '');
+const baseURL = (process.env.PI_TEACHER_DEV_BASE_URL ?? 'http://127.0.0.1:3333').replace(/\/$/, '');
 const password = process.env.PI_TEACHER_DEV_PASSWORD;
 
 if (!password) {
