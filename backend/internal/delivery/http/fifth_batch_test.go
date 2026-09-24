@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"testing"
 	"time"
-
-	"github.com/Pi-Teacher/server/internal/platform/settings"
 )
 
 // embeddingConfigLite 是配置端点响应子集.
@@ -127,6 +125,84 @@ func TestFifthBatchWorkerGeneratesEmbedding(t *testing.T) {
 	}
 }
 
+// TestFifthBatchNormalEmbeddingCoverage 验证普通建卡无需重建即可按实时覆盖率
+// 开放语义查重, 新增 pending 卡使比例跌破门槛时暂时关闭.
+func TestFifthBatchNormalEmbeddingCoverage(t *testing.T) {
+	ts := newTestServer(t)
+	csrf := ts.login()
+
+	// 没有启用卡时沿用空集合覆盖率为 100% 的约定.
+	if st := statusEmbedding(t, ts); !st.SimilarityEnabled || st.Coverage.ReadyPercent != 100 {
+		t.Fatalf("empty coverage status = %+v, want enabled at 100%%", st)
+	}
+
+	createCardWeb(t, ts, csrf, nil, "普通建卡 A", "答案 A")
+	if st := statusEmbedding(t, ts); st.Rebuilding || st.SimilarityEnabled || st.Coverage.Pending != 1 {
+		t.Fatalf("pending coverage status = %+v, want disabled without rebuild", st)
+	}
+	drainWorker(t, ts)
+	if st := statusEmbedding(t, ts); st.Rebuilding || !st.SimilarityEnabled || st.Coverage.Ready != 1 {
+		t.Fatalf("ready coverage status = %+v, want enabled without rebuild", st)
+	}
+
+	check := func(front string, wantStatus int) {
+		t.Helper()
+		resp := ts.do(http.MethodPost, "/api/web/cards/check", map[string]any{
+			"front": front, "enable_embedding": true,
+		}, map[string]string{"X-CSRF-Token": csrf})
+		if resp.StatusCode != wantStatus {
+			resp.Body.Close()
+			t.Fatalf("semantic check status = %d, want %d", resp.StatusCode, wantStatus)
+		}
+		if wantStatus == http.StatusOK {
+			var result checkResponseLite
+			decodeBody(t, resp, &result)
+			if result.MatchType != "semantic" {
+				t.Fatalf("match_type = %q, want semantic", result.MatchType)
+			}
+		} else {
+			var result struct {
+				Error struct {
+					Code string `json:"code"`
+				} `json:"error"`
+			}
+			decodeBody(t, resp, &result)
+			if result.Error.Code != "similarity_disabled" {
+				t.Fatalf("error code = %q, want similarity_disabled", result.Error.Code)
+			}
+		}
+	}
+	check("语义查询 1", http.StatusOK)
+
+	// 1/10 低于默认 90%, 状态端点和实际查重须同时关闭.
+	for i := 0; i < 9; i++ {
+		createCardWeb(t, ts, csrf, nil, fmt.Sprintf("普通建卡 %d", i), "答案")
+	}
+	if st := statusEmbedding(t, ts); st.Rebuilding || st.SimilarityEnabled || st.Coverage.ReadyPercent != 10 {
+		t.Fatalf("coverage below threshold = %+v, want disabled at 10%%", st)
+	}
+	check("语义查询 2", http.StatusConflict)
+
+	// 降低最低覆盖率无需重建即可开放语义查重.
+	resp := ts.do(http.MethodPatch, "/api/web/embedding/config", map[string]any{
+		"similarity_min_ready_percent": 10,
+	}, map[string]string{"X-CSRF-Token": csrf})
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("patch threshold status = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+	if st := statusEmbedding(t, ts); !st.SimilarityEnabled {
+		t.Fatalf("coverage at threshold = %+v, want enabled", st)
+	}
+	check("语义查询 3", http.StatusOK)
+
+	drainWorker(t, ts)
+	if st := statusEmbedding(t, ts); !st.SimilarityEnabled || st.Coverage.Ready != 10 {
+		t.Fatalf("all ready status = %+v, want enabled", st)
+	}
+}
+
 // TestFifthBatchRebuildAndCoverage 覆盖手动重建与覆盖率达标后相似度恢复:
 // 先让相似度关闭, 手动重建, worker 处理完毕后 similarity_enabled 打开.
 func TestFifthBatchRebuildAndCoverage(t *testing.T) {
@@ -208,6 +284,59 @@ func TestFifthBatchRetryFailed(t *testing.T) {
 	}
 	if !st.SimilarityEnabled {
 		t.Fatal("similarity should be enabled after retry reached 100 percent")
+	}
+}
+
+// TestFifthBatchRetryPreservesDynamicAvailability 验证普通建卡达标后即使
+// 持久化开关未更新, 失败项重试期间仍保持原本已开放的查重能力.
+func TestFifthBatchRetryPreservesDynamicAvailability(t *testing.T) {
+	ts := newTestServer(t)
+	csrf := ts.login()
+
+	createCardWeb(t, ts, csrf, nil, "重试前已就绪", "答案")
+	drainWorker(t, ts)
+	ts.provider.setError(errors.New("上游暂不可用"))
+	createCardWeb(t, ts, csrf, nil, "重试前失败", "答案")
+	drainWorker(t, ts)
+
+	resp := ts.do(http.MethodPatch, "/api/web/embedding/config", map[string]any{
+		"similarity_min_ready_percent": 50,
+	}, map[string]string{"X-CSRF-Token": csrf})
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("patch threshold status = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+	if st := statusEmbedding(t, ts); !st.SimilarityEnabled || st.Coverage.Failed != 1 {
+		t.Fatalf("before retry status = %+v, want enabled with one failed", st)
+	}
+
+	ts.provider.setError(nil)
+	resp = ts.do(http.MethodPost, "/api/web/embedding/retry-failed", nil,
+		map[string]string{"X-CSRF-Token": csrf})
+	if resp.StatusCode != http.StatusAccepted {
+		resp.Body.Close()
+		t.Fatalf("retry-failed status = %d, want 202", resp.StatusCode)
+	}
+	resp.Body.Close()
+	if st := statusEmbedding(t, ts); !st.Rebuilding || !st.SimilarityEnabled || st.Coverage.Pending != 1 {
+		t.Fatalf("during retry status = %+v, want availability preserved", st)
+	}
+	resp = ts.do(http.MethodPost, "/api/web/cards/check", map[string]any{
+		"front": "重试期间语义查询", "enable_embedding": true,
+	}, map[string]string{"X-CSRF-Token": csrf})
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("semantic check during retry status = %d, want 200", resp.StatusCode)
+	}
+	var result checkResponseLite
+	decodeBody(t, resp, &result)
+	if result.MatchType != "semantic" {
+		t.Fatalf("match_type during retry = %q, want semantic", result.MatchType)
+	}
+	drainWorker(t, ts)
+	if st := statusEmbedding(t, ts); st.Rebuilding || !st.SimilarityEnabled || st.Coverage.Ready != 2 {
+		t.Fatalf("after retry status = %+v, want enabled with both ready", st)
 	}
 }
 
@@ -311,9 +440,9 @@ func TestFifthBatchCheckSemantic(t *testing.T) {
 		t.Fatal("semantic match must carry similarity")
 	}
 
-	// 关闭相似度后, exact 命中仍应成功且不调用 provider; 只有 exact 未命中
-	// 才返回 409 similarity_disabled.
-	ts.setBoolSetting(t, csrf, "embedding_similarity_enabled", false)
+	// 完整重建期间相似度关闭, exact 命中仍应成功且不调用 provider;
+	// 只有 exact 未命中才返回 409 similarity_disabled.
+	rebuildEmbedding(t, ts, csrf)
 	before := ts.provider.callCount()
 	resp = ts.do(http.MethodPost, "/api/cli/cards/check", map[string]any{
 		"front": "goroutine 是什么?", "enable_embedding": true,
@@ -470,22 +599,6 @@ func (ts *testServer) makeAPIKey(t *testing.T, csrf string) string {
 		t.Fatal("empty api key")
 	}
 	return created.APIKey
-}
-
-// setBoolSetting 直接通过设置管理器写一个布尔 key.
-// embedding_similarity_enabled 不在通用设置端点的暴露范围内,
-// 因此测试绕开 HTTP 直接改内存写库 (与 WebUI 之外的内部写入等价).
-func (ts *testServer) setBoolSetting(t *testing.T, _ string, key string, value bool) {
-	t.Helper()
-	val := "false"
-	if value {
-		val = "true"
-	}
-	if err := ts.settings.Apply(context.Background(), []settings.Update{
-		{Key: key, Value: val},
-	}); err != nil {
-		t.Fatalf("apply setting %s: %v", key, err)
-	}
 }
 
 // TestFifthBatchCheckCLIRequiresIdempotencyKey 验证 CLI check 与其它 CLI

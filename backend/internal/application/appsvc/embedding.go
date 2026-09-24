@@ -195,7 +195,7 @@ func (s *EmbeddingService) Status(ctx context.Context) (EmbeddingStatus, error) 
 	}
 	return EmbeddingStatus{
 		Rebuilding:        s.rebuilding(),
-		SimilarityEnabled: s.similarityEnabled(),
+		SimilarityEnabled: s.similarityEnabledForCoverage(coverage),
 		Coverage:          coverage,
 	}, nil
 }
@@ -238,7 +238,7 @@ func (s *EmbeddingService) Rebuild(ctx context.Context) error {
 }
 
 // RetryFailed 重新生成全部 failed 卡. 没有失败项时直接成功且不改状态;
-// 已在重建中返回 409. 不清空 ready 向量, 也保持 similarity_enabled 不变.
+// 已在重建中返回 409. 不清空 ready 向量, 重试期间沿用启动前的有效查重状态.
 func (s *EmbeddingService) RetryFailed(ctx context.Context) error {
 	count, err := s.cards.CountFailedEmbedding(ctx)
 	if err != nil {
@@ -252,12 +252,19 @@ func (s *EmbeddingService) RetryFailed(ctx context.Context) error {
 		if s.rebuildingTx(innerCtx, tx) {
 			return errRebuilding
 		}
+		// 平时查重状态是动态计算的, 重试开始时将当前结果留作进行中的开关.
+		coverage, err := s.cards.WithTx(tx).EmbeddingCoverage(innerCtx)
+		if err != nil {
+			return err
+		}
+		enabled := coverage.ReadyPercent() >= float64(s.manager.Snapshot().Int64("embedding_similarity_min_ready_percent"))
 		if err := s.settingsRepo.WithTx(tx).ApplyTx(innerCtx, []settings.Update{
 			{Key: "embedding_rebuilding", Value: "true"},
+			{Key: "embedding_similarity_enabled", Value: formatBool(enabled)},
 		}); err != nil {
 			return err
 		}
-		_, err := s.cards.WithTx(tx).ResetFailedEmbedding(innerCtx, now)
+		_, err = s.cards.WithTx(tx).ResetFailedEmbedding(innerCtx, now)
 		return err
 	})
 	if err != nil {
@@ -381,7 +388,7 @@ func (s *EmbeddingService) checkSemantic(ctx context.Context, front string, topK
 	if err != nil {
 		return nil, err
 	}
-	if !s.similarityEnabled() {
+	if !s.similarityEnabledForCoverage(coverage) {
 		return nil, apperr.New(apperr.CodeSimilarityDisabled,
 			"语义查重能力当前未开放").
 			WithDetails(map[string]any{"coverage": coverageMap(coverage)})
@@ -448,9 +455,14 @@ func (s *EmbeddingService) rebuildingTx(ctx context.Context, tx *gorm.DB) bool {
 	return v == "true"
 }
 
-// similarityEnabled 读取相似度能力开关.
-func (s *EmbeddingService) similarityEnabled() bool {
-	return s.manager.Snapshot().Bool("embedding_similarity_enabled")
+// similarityEnabledForCoverage 在非重建期间按实时覆盖率判定是否开放.
+// 完整重建期间保持关闭, 失败项重试期间沿用原开关, 避免改变进行中的查重语义.
+func (s *EmbeddingService) similarityEnabledForCoverage(coverage EmbeddingCoverageInfo) bool {
+	snap := s.manager.Snapshot()
+	if snap.Bool("embedding_rebuilding") {
+		return snap.Bool("embedding_similarity_enabled")
+	}
+	return coverage.ReadyPercent >= float64(snap.Int64("embedding_similarity_min_ready_percent"))
 }
 
 // refresh 重新加载设置快照, 使本服务的直接写库对后续读取即时可见.
