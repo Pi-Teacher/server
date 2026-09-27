@@ -6,6 +6,25 @@ Pi Teacher 是一个单用户、自托管的长期记忆与学习管理工具。
 
 部署时只需要一个容器或一个 `pi-teacher-server` 二进制，不需要单独安装 Web 服务器或前端运行时。
 
+## 程序预览
+
+以下截图来自默认主题的 WebUI。
+
+| Dashboard | 卡片复习 (FSRS) |
+| --- | --- |
+| ![Dashboard](docs/dashboard.png) | ![卡片复习](docs/review-fsrs-due-cards.png) |
+| 今日待复习、复习数量、新增卡片，以及学习热力图 | 按 FSRS 计算到期卡片，用 Again/Hard/Good/Easy 四档评分 |
+
+| 术语表 | 卡片查重 |
+| --- | --- |
+| ![术语表](docs/glossary.png) | ![卡片查重](docs/vector-duplicate-check.png) |
+| 词条与 Markdown 定义，编辑时实时预览 | 先 exact 查重，再做 semantic 比对，列出相似卡片与相似度 |
+
+| 提案审批 | 审批开关控制 |
+| --- | --- |
+| ![提案审批](docs/ai-card-approval-required.png) | ![审批开关控制](docs/ai-card-approval-fine-toggle.png) |
+| CLI 提交的变更进入审批队列，逐条批准或驳回 | 按 Card/Topic/Glossary 与新建、修改、删除、恢复、合并分别开关审批 |
+
 ## 快速开始：Docker Compose
 
 运行环境需要 Docker Engine 和 Docker Compose v2。
