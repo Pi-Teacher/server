@@ -153,11 +153,11 @@ func newTestServer(t *testing.T) *testServer {
 	reviews := appsvc.NewReviewService(db.DB, cardRepo, calendarRepo, nil, logger, nil)
 	glossaries := appsvc.NewGlossaryService(db.DB, glossaryRepo, approvalRepo, logger)
 	trash := appsvc.NewTrashService(db.DB, topicRepo, cardRepo, glossaryRepo, approvalRepo, logger)
-	approvals := appsvc.NewApprovalService(db.DB, approvalRepo, topicRepo, cardRepo, glossaryRepo,
-		topics, cards, glossaries, logger)
+	profileSvc := appsvc.NewUserProfileService(db.DB, profileRepo, manager)
+	approvals := appsvc.NewApprovalService(db.DB, approvalRepo, topicRepo, cardRepo, glossaryRepo, profileRepo,
+		topics, cards, glossaries, profileSvc, logger)
 	idempotency := appsvc.NewIdempotencyService(db.DB, idempotencyRepo, logger)
 	settingsSvc := appsvc.NewSettingsService(manager, nil)
-	profileSvc := appsvc.NewUserProfileService(db.DB, profileRepo, manager)
 	logSvc := appsvc.NewLogService(appLogRepo)
 
 	// Embedding: 测试用确定性 provider, 不启动后台 worker loop,

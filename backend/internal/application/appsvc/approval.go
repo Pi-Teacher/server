@@ -27,10 +27,12 @@ type ApprovalService struct {
 	topics     *repo.TopicRepository
 	cards      *repo.CardRepository
 	glossaries *repo.GlossaryRepository
+	profiles   *repo.UserProfileRepository
 
 	topicSvc    *TopicService
 	cardSvc     *CardService
 	glossarySvc *GlossaryService
+	profileSvc  *UserProfileService
 
 	logger *slog.Logger
 	now    func() time.Time
@@ -43,9 +45,11 @@ func NewApprovalService(
 	topics *repo.TopicRepository,
 	cards *repo.CardRepository,
 	glossaries *repo.GlossaryRepository,
+	profiles *repo.UserProfileRepository,
 	topicSvc *TopicService,
 	cardSvc *CardService,
 	glossarySvc *GlossaryService,
+	profileSvc *UserProfileService,
 	logger *slog.Logger,
 ) *ApprovalService {
 	return &ApprovalService{
@@ -54,9 +58,11 @@ func NewApprovalService(
 		topics:      topics,
 		cards:       cards,
 		glossaries:  glossaries,
+		profiles:    profiles,
 		topicSvc:    topicSvc,
 		cardSvc:     cardSvc,
 		glossarySvc: glossarySvc,
+		profileSvc:  profileSvc,
 		logger:      logger,
 		now:         func() time.Time { return persistence.Now() },
 	}
@@ -689,6 +695,16 @@ func (s *ApprovalService) execute(ctx context.Context, op int16, targets []model
 		p.SourceCardIDs = sourceIDs[:]
 		_, err = s.cardSvc.Merge(ctx, p.ToInput())
 		return err
+	case model.OpProfileUpdate:
+		var p ProfileUpdatePayload
+		if err := decodeProposalPayload(payload, &p); err != nil {
+			return err
+		}
+		// 批准时用 payload 的 expected_version 与当前行版本比较,
+		// 不一致返回 409 version_conflict, 不静默覆盖等待期间的他人修改.
+		// 画像无 target 快照, 这里不忽略 payload 版本 (与其他更新类不同).
+		_, err := s.profileSvc.Update(ctx, *p.ExpectedVersion, *p.Profile)
+		return err
 	default:
 		return apperr.Newf(apperr.CodeInternal, "未知审批操作 %d", op)
 	}
@@ -728,7 +744,7 @@ func mergeSourceIDsFromTargets(targets []model.ApprovalTarget) ([2]int64, error)
 // 来源卡而非单一主目标, 也不取 role=target.
 func requiresPrimaryTarget(op int16) bool {
 	switch op {
-	case model.OpCardCreate, model.OpTopicCreate, model.OpGlossaryCreate, model.OpCardMerge:
+	case model.OpCardCreate, model.OpTopicCreate, model.OpGlossaryCreate, model.OpCardMerge, model.OpProfileUpdate:
 		return false
 	default:
 		return true

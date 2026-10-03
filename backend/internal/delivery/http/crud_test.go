@@ -412,6 +412,7 @@ func disableCLIApprovals(t *testing.T, ts *testServer, csrf string) {
 		"enable_cli_glossary_update_approval",
 		"enable_cli_glossary_trash_approval",
 		"enable_cli_glossary_restore_approval",
+		"enable_cli_profile_update_approval",
 	} {
 		patch[key] = false
 	}

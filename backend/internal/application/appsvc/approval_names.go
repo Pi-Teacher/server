@@ -43,6 +43,8 @@ func ApprovalOperationName(op int16) string {
 		return "glossary_trash"
 	case model.OpGlossaryRestore:
 		return "glossary_restore"
+	case model.OpProfileUpdate:
+		return "profile_update"
 	default:
 		return "unknown"
 	}
@@ -57,6 +59,8 @@ func ApprovalEntityTypeName(entityType int16) string {
 		return "card"
 	case model.EntityGlossary:
 		return "glossary"
+	case model.EntityProfile:
+		return "user_profile"
 	default:
 		return "unknown"
 	}
@@ -127,6 +131,8 @@ func ApprovalSwitchKey(op int16) string {
 		return "enable_cli_glossary_trash_approval"
 	case model.OpGlossaryRestore:
 		return "enable_cli_glossary_restore_approval"
+	case model.OpProfileUpdate:
+		return "enable_cli_profile_update_approval"
 	default:
 		return ""
 	}

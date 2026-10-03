@@ -25,13 +25,15 @@ export const operationLabels: Record<ApprovalOperation, string> = {
   glossary_create: '新建 Glossary',
   glossary_update: '修改 Glossary',
   glossary_trash: '放入回收站 Glossary',
-  glossary_restore: '恢复 Glossary'
+  glossary_restore: '恢复 Glossary',
+  profile_update: '修改用户画像'
 };
 
 export const entityTypeLabels: Record<ApprovalEntityType, string> = {
   topic: 'Topic',
   card: 'Card',
-  glossary: 'Glossary'
+  glossary: 'Glossary',
+  user_profile: '用户画像'
 };
 
 type BadgeTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger';

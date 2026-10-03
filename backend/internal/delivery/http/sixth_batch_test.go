@@ -143,71 +143,135 @@ func TestSixthBatchUserProfileWeb(t *testing.T) {
 }
 
 // TestSixthBatchUserProfileCLI 覆盖 CLI 画像端点:
-// 缺 Idempotency-Key 返回 400, 携带后直写生效, 不产生审批请求.
+// 缺 Idempotency-Key 返回 400; 审批开关开启时 PUT 转提案 (202),
+// 批准后生效; 等待期间版本变化则批准返回 409; 开关关闭后直写.
 func TestSixthBatchUserProfileCLI(t *testing.T) {
 	ts := newTestServer(t)
+	cli := ts.newCLIClient(t)
 	csrf := ts.login()
-	apiKey := ts.makeAPIKey(t, csrf)
 
 	// 缺幂等头 → 400.
 	resp := ts.do(http.MethodPut, "/api/cli/user-profile", map[string]any{
 		"profile": "x", "expected_version": 0,
-	}, map[string]string{"Authorization": "Bearer " + apiKey})
+	}, map[string]string{"Authorization": "Bearer " + cli.apiKey})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("cli put without key = %d, want 400", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	// 携带幂等头直写 (默认行 version=1, 写后 2).
+	// 默认开关开启: CLI PUT 转提案返回 202, 画像未变.
 	resp = ts.do(http.MethodPut, "/api/cli/user-profile", map[string]any{
-		"profile": "CLI 写入", "expected_version": 1,
+		"profile": "CLI 提议", "expected_version": 1,
 	}, map[string]string{
-		"Authorization":   "Bearer " + apiKey,
+		"Authorization":   "Bearer " + cli.apiKey,
 		"Idempotency-Key": "profile-1",
 	})
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("cli put = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("cli put = %d, want 202", resp.StatusCode)
 	}
-	var got userProfileLite
-	decodeBody(t, resp, &got)
-	if got.Profile != "CLI 写入" || got.Version != 2 {
-		t.Fatalf("cli put profile = %+v", got)
+	var proposal struct {
+		Approval approvalSummary `json:"approval"`
+	}
+	decodeBody(t, resp, &proposal)
+	if proposal.Approval.Status != "pending" {
+		t.Fatalf("proposal status = %s, want pending", proposal.Approval.Status)
+	}
+	var current userProfileLite
+	resp = ts.do(http.MethodGet, "/api/web/user-profile", nil, nil)
+	decodeBody(t, resp, &current)
+	if current.Profile != "" || current.Version != 1 {
+		t.Fatalf("profile after propose = %+v, want unchanged version 1", current)
 	}
 
-	// 同 Key 重放返回首次结果 (version 不重复递增).
+	// 提案时版本过期直接 409, 不创建提案.
 	resp = ts.do(http.MethodPut, "/api/cli/user-profile", map[string]any{
-		"profile": "CLI 写入", "expected_version": 1,
+		"profile": "过期提案", "expected_version": 99,
 	}, map[string]string{
-		"Authorization":   "Bearer " + apiKey,
+		"Authorization":   "Bearer " + cli.apiKey,
+		"Idempotency-Key": "profile-stale",
+	})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("cli put stale version = %d, want 409", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// 同 Key 重放返回首次 202 结果.
+	resp = ts.do(http.MethodPut, "/api/cli/user-profile", map[string]any{
+		"profile": "CLI 提议", "expected_version": 1,
+	}, map[string]string{
+		"Authorization":   "Bearer " + cli.apiKey,
 		"Idempotency-Key": "profile-1",
 	})
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("replay put = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("replay put = %d, want 202", resp.StatusCode)
 	}
-	decodeBody(t, resp, &got)
-	if got.Version != 2 {
-		t.Fatalf("replay version = %d, want 2", got.Version)
+	decodeBody(t, resp, &proposal)
+	if proposal.Approval.Status != "pending" {
+		t.Fatalf("replay proposal status = %s, want pending", proposal.Approval.Status)
 	}
 
-	// CLI 读端点拿到同一内容.
+	// 批准后画像生效, version+1.
+	resp = ts.do(http.MethodPost, fmt.Sprintf("/api/web/approvals/%d/approve", proposal.Approval.ID),
+		map[string]any{}, map[string]string{"X-CSRF-Token": csrf})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("approve status = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
 	resp = ts.do(http.MethodGet, "/api/cli/user-profile", nil,
-		map[string]string{"Authorization": "Bearer " + apiKey})
+		map[string]string{"Authorization": "Bearer " + cli.apiKey})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("cli get = %d, want 200", resp.StatusCode)
 	}
+	var got userProfileLite
 	decodeBody(t, resp, &got)
-	if got.Profile != "CLI 写入" || got.Version != 2 {
-		t.Fatalf("cli get profile = %+v", got)
+	if got.Profile != "CLI 提议" || got.Version != 2 {
+		t.Fatalf("cli get profile = %+v, want CLI 提议 version 2", got)
 	}
 
-	// 画像写入不产生任何审批请求.
-	listResp := ts.do(http.MethodGet, "/api/web/approvals", nil, nil)
-	var approvals struct {
-		Total int64 `json:"total"`
+	// 等待期间画像被改动: 提案批准时返回 409 version_conflict.
+	resp = ts.do(http.MethodPut, "/api/cli/user-profile", map[string]any{
+		"profile": "等待期间提案", "expected_version": 2,
+	}, map[string]string{
+		"Authorization":   "Bearer " + cli.apiKey,
+		"Idempotency-Key": "profile-2",
+	})
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("second propose = %d, want 202", resp.StatusCode)
 	}
-	decodeBody(t, listResp, &approvals)
-	if approvals.Total != 0 {
-		t.Fatalf("approvals total = %d, want 0", approvals.Total)
+	decodeBody(t, resp, &proposal)
+	resp = ts.do(http.MethodPut, "/api/web/user-profile", map[string]any{
+		"profile": "Web 抢先修改", "expected_version": 2,
+	}, map[string]string{"X-CSRF-Token": csrf})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("web put = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+	resp = ts.do(http.MethodPost, fmt.Sprintf("/api/web/approvals/%d/approve", proposal.Approval.ID),
+		map[string]any{}, map[string]string{"X-CSRF-Token": csrf})
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("approve after concurrent change = %d, want 409", resp.StatusCode)
+	}
+	resp.Body.Close()
+	resp = ts.do(http.MethodGet, "/api/web/user-profile", nil, nil)
+	decodeBody(t, resp, &got)
+	if got.Profile != "Web 抢先修改" || got.Version != 3 {
+		t.Fatalf("profile after conflict = %+v, want Web 抢先修改 version 3", got)
+	}
+
+	// 关闭审批开关后 CLI PUT 直写生效.
+	disableCLIApprovals(t, ts, csrf)
+	resp = ts.do(http.MethodPut, "/api/cli/user-profile", map[string]any{
+		"profile": "CLI 直写", "expected_version": 3,
+	}, map[string]string{
+		"Authorization":   "Bearer " + cli.apiKey,
+		"Idempotency-Key": "profile-3",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("cli put direct = %d, want 200", resp.StatusCode)
+	}
+	decodeBody(t, resp, &got)
+	if got.Profile != "CLI 直写" || got.Version != 4 {
+		t.Fatalf("cli put direct profile = %+v, want CLI 直写 version 4", got)
 	}
 }
 

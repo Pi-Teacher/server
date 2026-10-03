@@ -5,13 +5,13 @@ import { apiRequest } from './client';
  * 通用设置 (/api/web/settings)。
  *
  * 后端只暴露 approval / calendar / log 三组 key, embedding 与 user_profile
- * 各有独立资源端点, 因此这里只声明通用端点实际返回的 18 个字段, 不多声明。
+ * 各有独立资源端点, 因此这里只声明通用端点实际返回的 19 个字段, 不多声明。
  */
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface GeneralSettings {
-  // 13 个 CLI 审批开关, 默认全部开启。
+  // 14 个 CLI 审批开关, 默认全部开启。
   enable_cli_card_create_approval: boolean;
   enable_cli_card_update_approval: boolean;
   enable_cli_card_trash_approval: boolean;
@@ -25,6 +25,7 @@ export interface GeneralSettings {
   enable_cli_glossary_update_approval: boolean;
   enable_cli_glossary_trash_approval: boolean;
   enable_cli_glossary_restore_approval: boolean;
+  enable_cli_profile_update_approval: boolean;
   /** IANA 时区名, 例如 Asia/Shanghai。 */
   calendar_timezone: string;
   stdout_log_level: LogLevel;
@@ -37,7 +38,7 @@ export interface GeneralSettings {
 /** PATCH 请求体只包含实际修改的字段。 */
 export type GeneralSettingsPatch = Partial<GeneralSettings>;
 
-/** 13 个 CLI 审批开关键名, 由"审批开关控制"页面独占管理。 */
+/** 14 个 CLI 审批开关键名, 由"审批开关控制"页面独占管理。 */
 export const approvalSwitchKeys = [
   'enable_cli_card_create_approval',
   'enable_cli_card_update_approval',
@@ -51,7 +52,8 @@ export const approvalSwitchKeys = [
   'enable_cli_glossary_create_approval',
   'enable_cli_glossary_update_approval',
   'enable_cli_glossary_trash_approval',
-  'enable_cli_glossary_restore_approval'
+  'enable_cli_glossary_restore_approval',
+  'enable_cli_profile_update_approval'
 ] as const;
 
 export type ApprovalSwitchKey = (typeof approvalSwitchKeys)[number];

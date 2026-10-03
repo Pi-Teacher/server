@@ -120,6 +120,11 @@ func (s *Server) buildGlossaryRestore(r *http.Request) ([]appsvc.ProposalSpec, e
 	return []appsvc.ProposalSpec{specOf(model.OpGlossaryRestore, model.EntityGlossary, id, rawBodyFromContext(r.Context()))}, nil
 }
 
+// buildProfileUpdate 构建用户画像更新提案. 画像只有单行, 无实体 ID.
+func (s *Server) buildProfileUpdate(r *http.Request) ([]appsvc.ProposalSpec, error) {
+	return []appsvc.ProposalSpec{specOf(model.OpProfileUpdate, model.EntityProfile, nil, rawBodyFromContext(r.Context()))}, nil
+}
+
 // --- 批量端点构建器 ---
 
 // topicBatchItem 是批量创建 Topic 的单项.

@@ -6,12 +6,12 @@ import (
 )
 
 // TestRegistryDefaultsAndTypes 验证注册表内容:
-// 13 个审批开关全部默认开启, 敏感 key 有标记.
+// 14 个审批开关全部默认开启, 敏感 key 有标记.
 func TestRegistryDefaultsAndTypes(t *testing.T) {
 	r := Default()
 	approvals := r.Group(GroupApproval)
-	if len(approvals) != 13 {
-		t.Fatalf("approval switch count = %d, want 13", len(approvals))
+	if len(approvals) != 14 {
+		t.Fatalf("approval switch count = %d, want 14", len(approvals))
 	}
 	for _, s := range approvals {
 		if s.Type != TypeBool {

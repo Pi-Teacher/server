@@ -104,8 +104,10 @@ func runServe(ctx context.Context, args []string) error {
 	reviewSvc := appsvc.NewReviewService(db.DB, cardRepo, calendarRepo, scheduler, logger, timezone)
 	glossarySvc := appsvc.NewGlossaryService(db.DB, glossaryRepo, approvalRepo, logger)
 	trashSvc := appsvc.NewTrashService(db.DB, topicRepo, cardRepo, glossaryRepo, approvalRepo, logger)
-	approvalSvc := appsvc.NewApprovalService(db.DB, approvalRepo, topicRepo, cardRepo, glossaryRepo,
-		topicSvc, cardSvc, glossarySvc, logger)
+	// profileSvc 需注入审批服务供批准执行, 因此先于 approvalSvc 构造.
+	profileSvc := appsvc.NewUserProfileService(db.DB, profileRepo, manager)
+	approvalSvc := appsvc.NewApprovalService(db.DB, approvalRepo, topicRepo, cardRepo, glossaryRepo, profileRepo,
+		topicSvc, cardSvc, glossarySvc, profileSvc, logger)
 
 	// Embedding: 连接参数每次调用前读设置快照, 改配置后无需重启即生效.
 	embeddingConfig := func() embedding.Config {
@@ -132,7 +134,6 @@ func runServe(ctx context.Context, args []string) error {
 	settingsSvc := appsvc.NewSettingsService(manager, func(snap *settings.Snapshot) {
 		applyRuntimeSettings(snap, runtimeCfg)
 	})
-	profileSvc := appsvc.NewUserProfileService(db.DB, profileRepo, manager)
 	logSvc := appsvc.NewLogService(appLogRepo)
 
 	// 启动时清理过期幂等记录, 随后定时维护.

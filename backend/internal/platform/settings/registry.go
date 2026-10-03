@@ -106,7 +106,7 @@ func buildRegistry() *Registry {
 		r.order = append(r.order, s.Key)
 	}
 
-	// 13 个 CLI 审批开关, 默认全部开启: agent 的提议必须先经用户审批,
+	// 14 个 CLI 审批开关, 默认全部开启: agent 的提议必须先经用户审批,
 	// 用户显式关闭某类操作后才会直写.
 	for _, key := range []string{
 		"enable_cli_card_create_approval",
@@ -122,6 +122,7 @@ func buildRegistry() *Registry {
 		"enable_cli_glossary_update_approval",
 		"enable_cli_glossary_trash_approval",
 		"enable_cli_glossary_restore_approval",
+		"enable_cli_profile_update_approval",
 	} {
 		add(Setting{
 			Key: key, Type: TypeBool, Group: GroupApproval,

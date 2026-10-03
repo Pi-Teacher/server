@@ -15,6 +15,7 @@ const server: GeneralSettings = {
   enable_cli_glossary_update_approval: true,
   enable_cli_glossary_trash_approval: true,
   enable_cli_glossary_restore_approval: true,
+  enable_cli_profile_update_approval: true,
   calendar_timezone: 'UTC',
   stdout_log_level: 'info',
   database_log_enabled: false,

@@ -27,9 +27,10 @@ export type ApprovalOperation =
   | 'glossary_create'
   | 'glossary_update'
   | 'glossary_trash'
-  | 'glossary_restore';
+  | 'glossary_restore'
+  | 'profile_update';
 
-export type ApprovalEntityType = 'topic' | 'card' | 'glossary';
+export type ApprovalEntityType = 'topic' | 'card' | 'glossary' | 'user_profile';
 
 /** 审批目标角色, 取自后端 target.role 常量。 */
 export type ApprovalTargetRole = 'target' | 'topic' | 'affected_card' | 'source_1' | 'source_2';

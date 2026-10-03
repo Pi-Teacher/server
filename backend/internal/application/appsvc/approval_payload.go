@@ -8,6 +8,13 @@ import "encoding/json"
 // 最终 payload 解码回领域输入. HTTP 请求结构体直接复用它们, 避免
 // 两套 schema 漂移. 所有结构都用 DisallowUnknownFields 解码.
 
+// ProfileUpdatePayload 对应 profile_update. 画像只有单行, 无实体 ID;
+// profile 允许空字符串但不能缺省 (与 PUT 端点一致, 指针区分缺省与空串).
+type ProfileUpdatePayload struct {
+	ExpectedVersion *int64  `json:"expected_version"`
+	Profile         *string `json:"profile"`
+}
+
 // TopicCreatePayload 对应 topic_create.
 type TopicCreatePayload struct {
 	Name        string `json:"name"`

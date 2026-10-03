@@ -71,7 +71,11 @@ const fieldsByOperation: Record<ApprovalOperation, PayloadFieldSpec[]> = {
     { key: 'definition', label: '定义', kind: 'multiline' }
   ],
   glossary_trash: [{ key: 'expected_version', label: '期望版本', kind: 'number' }],
-  glossary_restore: [{ key: 'expected_version', label: '期望版本', kind: 'number' }]
+  glossary_restore: [{ key: 'expected_version', label: '期望版本', kind: 'number' }],
+  profile_update: [
+    { key: 'profile', label: '画像内容', kind: 'multiline' },
+    { key: 'expected_version', label: '期望版本', kind: 'number' }
+  ]
 };
 
 export const payloadFields = (operation: ApprovalOperation): PayloadFieldSpec[] =>

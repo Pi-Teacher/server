@@ -31,6 +31,7 @@ const generalSettingsFixture = {
   enable_cli_glossary_update_approval: true,
   enable_cli_glossary_trash_approval: true,
   enable_cli_glossary_restore_approval: true,
+  enable_cli_profile_update_approval: true,
   calendar_timezone: 'UTC',
   stdout_log_level: 'info',
   database_log_enabled: false,
@@ -334,13 +335,14 @@ describe('系统设置 - 通用页', () => {
 describe('审批开关控制页', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('渲染 13 个 CLI 审批开关并按分组展示', async () => {
+  it('渲染 14 个 CLI 审批开关并按分组展示', async () => {
     installSettingsMock();
     renderAt('/approval-switches');
 
     await screen.findByRole('switch', { name: 'CLI 新建 Card 需要审批' });
-    expect(screen.getAllByRole('switch')).toHaveLength(13);
+    expect(screen.getAllByRole('switch')).toHaveLength(14);
     expect(screen.getByText('Glossary')).toBeInTheDocument();
+    expect(screen.getByText('用户画像')).toBeInTheDocument();
   });
 
   it('修改后提交的 PATCH 只包含被改动的开关', async () => {

@@ -67,6 +67,7 @@ const (
 	OpGlossaryUpdate  int16 = 21
 	OpGlossaryTrash   int16 = 22
 	OpGlossaryRestore int16 = 23
+	OpProfileUpdate   int16 = 30
 )
 
 // 审批目标与日志使用的对象类型.
@@ -74,6 +75,7 @@ const (
 	EntityTopic    int16 = 1
 	EntityCard     int16 = 2
 	EntityGlossary int16 = 3
+	EntityProfile  int16 = 4
 )
 
 // 幂等记录状态.

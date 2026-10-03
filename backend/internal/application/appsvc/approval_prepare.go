@@ -333,6 +333,32 @@ func (s *ApprovalService) prepare(
 			BaseVersion: trashed.Version, Role: roleTarget,
 		}}, nil
 
+	case model.OpProfileUpdate:
+		var p ProfileUpdatePayload
+		if err := decodeProposalPayload(string(spec.Payload), &p); err != nil {
+			return nil, err
+		}
+		if p.Profile == nil {
+			return nil, apperr.Validation("profile 不能缺省").
+				WithDetails(map[string]any{"field": "profile"})
+		}
+		expectedVersion, err := requirePayloadVersion(p.ExpectedVersion)
+		if err != nil {
+			return nil, err
+		}
+		// 画像只有单行且无独立实体 ID, 不登记 approval_target;
+		// 提案时把版本对齐当前行, 避免生成一提交就注定冲突的请求.
+		// pending 期间画像被改动不会触发 stale, 批准时由 Update 的
+		// 条件更新再校验一次版本, 不一致返回 409 version_conflict.
+		row, err := s.profiles.WithTx(tx).Get(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if row.Version != expectedVersion {
+			return nil, versionConflict("用户画像", row.Version)
+		}
+		return nil, nil
+
 	default:
 		return nil, apperr.Newf(apperr.CodeValidationError, "该操作不支持审批提案: %d", spec.Operation)
 	}

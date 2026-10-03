@@ -1,7 +1,7 @@
 import { ApprovalSwitchKey } from '../../api/settings';
 
 /**
- * 13 个 CLI 审批开关的中文标签, 按资源分组展示。
+ * 14 个 CLI 审批开关的中文标签, 按资源分组展示。
  * 与后端 platform/settings 登记的 key 一一对应, 集中在此避免多处硬编码。
  */
 export const approvalGroups: { title: string; items: { key: ApprovalSwitchKey; label: string }[] }[] = [
@@ -32,5 +32,9 @@ export const approvalGroups: { title: string; items: { key: ApprovalSwitchKey; l
       { key: 'enable_cli_glossary_trash_approval', label: 'CLI 删除 Glossary 需要审批' },
       { key: 'enable_cli_glossary_restore_approval', label: 'CLI 恢复 Glossary 需要审批' }
     ]
+  },
+  {
+    title: '用户画像',
+    items: [{ key: 'enable_cli_profile_update_approval', label: 'CLI 修改用户画像需要审批' }]
   }
 ];

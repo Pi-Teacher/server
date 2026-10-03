@@ -87,9 +87,9 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	mux.Handle("GET /api/web/settings", s.requireWebSession(http.HandlerFunc(s.handleGetSettings)))
 	mux.Handle("PATCH /api/web/settings", s.requireWebSession(http.HandlerFunc(s.handlePatchSettings)))
 
-	// --- 用户画像 (Web 与 CLI 同构; CLI PUT 包幂等, 不挂审批) ---
+	// --- 用户画像 (Web 与 CLI 同构; CLI PUT 包幂等并按审批开关分流) ---
 	s.registerCRUD(mux, "user-profile", "GET", "", s.handleGetUserProfile, cliWriteSpec{})
-	s.registerCRUD(mux, "user-profile", "PUT", "", s.handlePutUserProfile, cliWriteSpec{})
+	s.registerCRUD(mux, "user-profile", "PUT", "", s.handlePutUserProfile, s.writeSpec(model.OpProfileUpdate, s.buildProfileUpdate, false))
 
 	// --- 日志查询 (仅 Web) ---
 	mux.Handle("GET /api/web/logs", s.requireWebSession(http.HandlerFunc(s.handleListLogs)))
