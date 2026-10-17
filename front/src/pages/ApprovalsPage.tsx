@@ -191,7 +191,7 @@ export const ApprovalsPage: React.FC = () => {
     content = (
       <EmptyState
         title="没有符合条件的提案"
-        description="可以切换状态筛选条件, 或通过 CLI 使用已开启审批的操作提交新的提案。"
+        description="可以切换状态筛选条件, 或通过 CLI/MCP 使用已开启审批的操作提交新的提案。"
       />
     );
   } else {
@@ -227,7 +227,7 @@ export const ApprovalsPage: React.FC = () => {
           <div>
             <h1 className="mt-1 text-headline-md text-on-surface">提案审批</h1>
             <p className="mt-2 max-w-3xl text-body-md text-on-surface-variant">
-              查看 CLI 提交的待审批提案, 按状态筛选并定位需要处理的变更。
+              查看 CLI/MCP 提交的待审批提案, 按状态筛选并定位需要处理的变更。
             </p>
           </div>
           <Button

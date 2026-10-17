@@ -38,8 +38,11 @@ type RouterConfig struct {
 // NewRouter 构造顶层 HTTP handler.
 //
 // /api/web 与 /api/cli 是两个隔离的认证命名空间, 各自挂认证中间件;
-// 两套路由复用同一组 handler. 路由层只负责认证来源与 CLI 写请求的
-// 幂等包装与审批分流 (202 提案). 未知路由返回统一错误信封.
+// 两套路由复用同一组 handler. /api/mcp 是 MCP JSON-RPC 端点 (见
+// mcp_server.go), 走与 CLI 相同的 API Key 认证, 工具调用内部复用
+// CLI 路由链, 权限控制与审批开关与 CLI 完全绑定.
+// 路由层只负责认证来源与 CLI 写请求的幂等包装与审批分流 (202 提案).
+// 未知路由返回统一错误信封.
 func NewRouter(cfg RouterConfig) http.Handler {
 	s := &Server{
 		Auth:        cfg.Auth,
@@ -66,7 +69,25 @@ func NewRouter(cfg RouterConfig) http.Handler {
 
 	mux := http.NewServeMux()
 
+	// mcpExecutor 把 MCP 工具调用合成为对 mux 的内部请求.
+	// 持有 mux 而非外层包装链: 合成请求已是认证后的续走 CLI 链路,
+	// 无需重复 request-id/访问日志等协议层中间件.
+	s.mcpExecutor = &mcpCLIExecutor{server: s, handler: mux}
+
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+
+	// MCP JSON-RPC 端点: Streamable HTTP (Stateless), 认证复用 CLI API Key,
+	// 工具调用内部合成 CLI 请求, 权限与审批开关与 CLI 完全一致.
+	// Stateless 模式下 GET/DELETE 无意义, 按规范返回 405.
+	mux.Handle("POST /api/mcp", s.mcpHTTPHandler())
+	mux.HandleFunc("GET /api/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+	})
+	mux.HandleFunc("DELETE /api/mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+	})
 
 	// login 不挂会话中间件: 它负责建立 session, 自行做来源校验.
 	// 其余认证端点统一走 requireWebSession, 写请求自动附带 CSRF 校验.
@@ -218,10 +239,10 @@ func (s *Server) registerCRUD(
 	spec cliWriteSpec,
 ) {
 	mux.Handle(method+" /api/web/"+resource+pattern, s.requireWebSession(h))
+	// 先包审批分流, 再包幂等中间件: 幂等包装在外层开事务,
+	// 于是提案创建与幂等记录落在同一事务.
 	cliHandler := http.Handler(h)
 	if method != http.MethodGet {
-		// 先包审批分流, 再包幂等中间件: 幂等包装在外层开事务,
-		// 于是提案创建与幂等记录落在同一事务.
 		if spec.gate != nil {
 			cliHandler = s.withProposalGate(*spec.gate, cliHandler)
 		}

@@ -104,8 +104,9 @@ func (s *Server) withIdempotency(next http.Handler) http.Handler {
 	})
 }
 
-// requiresKnowledgeNameWrite 判断 CLI 请求是否会修改 Topic/Glossary 名称空间.
-// 这些请求必须在幂等事务开启前取得进程锁, 保持统一的锁顺序.
+// requiresKnowledgeNameWrite 判断 CLI 请求是否会修改 Topic/Glossary
+// 名称空间. 这些请求必须在幂等事务开启前取得进程锁, 保持统一的锁顺序.
+// MCP 工具调用内部合成的是 /api/cli 路径的请求, 无需单独处理.
 func requiresKnowledgeNameWrite(method, path string) bool {
 	resource := strings.TrimPrefix(path, "/api/cli/")
 	switch method {
@@ -184,6 +185,7 @@ func (b *bufferedResponse) reset() {
 
 // cliProposalGate 在 CLI 写链路上实现审批分流: 开关开启时把请求转成
 // 审批提案并返回 202, 关闭时透传给直写 handler. Web 请求不经这里.
+// MCP 工具调用复用这条链路, 因此审批开关对 MCP 同样生效.
 type cliProposalGate struct {
 	operation int16
 	// batch 标记批量端点: 开关开启时为每个项目创建独立提案,

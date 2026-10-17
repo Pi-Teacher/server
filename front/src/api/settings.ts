@@ -11,7 +11,7 @@ import { apiRequest } from './client';
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface GeneralSettings {
-  // 14 个 CLI 审批开关, 默认全部开启。
+  // 14 个 CLI/MCP 审批开关, 默认全部开启。
   enable_cli_card_create_approval: boolean;
   enable_cli_card_update_approval: boolean;
   enable_cli_card_trash_approval: boolean;
@@ -38,7 +38,7 @@ export interface GeneralSettings {
 /** PATCH 请求体只包含实际修改的字段。 */
 export type GeneralSettingsPatch = Partial<GeneralSettings>;
 
-/** 14 个 CLI 审批开关键名, 由"审批开关控制"页面独占管理。 */
+/** 14 个 CLI/MCP 审批开关键名, 由"审批开关控制"页面独占管理。 */
 export const approvalSwitchKeys = [
   'enable_cli_card_create_approval',
   'enable_cli_card_update_approval',

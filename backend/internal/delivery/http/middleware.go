@@ -42,6 +42,9 @@ type Server struct {
 	// AllowedOrigins 是 CSRF 来源校验额外接受的来源集合,
 	// 为空时只按请求 Host 匹配.
 	AllowedOrigins map[string]struct{}
+	// mcpExecutor 把 MCP 工具调用合成为 CLI 路由链的内部请求,
+	// 在 NewRouter 完成 mux 组装后注入.
+	mcpExecutor *mcpCLIExecutor
 }
 
 // sessionFromContext 返回已认证的 session, 不存在时为 nil.

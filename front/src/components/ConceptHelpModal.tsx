@@ -35,8 +35,8 @@ const CORE_CONCEPTS: ConceptEntry[] = [
 const FEATURES: ConceptEntry[] = [
   { name: 'Dashboard', description: '首页仪表盘，只读展示今日待复习、今日复习与制卡统计，以及学习热力图。' },
   { name: '卡片管理', description: '搜索、筛选并维护卡片，查看所属分类、Embedding 状态与版本信息。' },
-  { name: '提案审批', description: '审核 CLI 通过 AI 提交的合并、提取等提案，决定是否写入正式数据。' },
-  { name: '审批开关控制', description: '按操作类型开关 CLI 写入是否需要人工审批。' },
+  { name: '提案审批', description: '审核 CLI/MCP 通过 AI 提交的合并、提取等提案，决定是否写入正式数据。' },
+  { name: '审批开关控制', description: '按操作类型开关 CLI/MCP 写入是否需要人工审批。' },
   { name: '回收站', description: '查看已放入回收站的卡片、知识分类与术语，可恢复或彻底删除。' },
   { name: '日志查看', description: '查看系统运行与操作日志，便于排查问题。' },
   { name: '系统设置', description: '配置时区、日志级别与数据保留策略等实例级设置。' },

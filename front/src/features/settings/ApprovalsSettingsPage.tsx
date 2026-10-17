@@ -9,7 +9,7 @@ import { Toggle } from './Toggle';
 import { approvalGroups } from './approvalGroups';
 import { useSettingsSection } from './useSettingsSection';
 
-/** 审批开关页只负责 13 个 CLI 审批开关。 */
+/** 审批开关页只负责 13 个 CLI/MCP 审批开关。 */
 type ApprovalDraft = Record<(typeof approvalSwitchKeys)[number], boolean>;
 
 const buildDraft = (settings: GeneralSettings): ApprovalDraft =>
@@ -35,7 +35,7 @@ export const ApprovalsSettingsPage: React.FC = () => {
     });
 
   if (settingsQuery.isPending) {
-    return <LoadingState title="正在加载审批开关" description="正在读取 CLI 审批开关状态。" />;
+    return <LoadingState title="正在加载审批开关" description="正在读取 CLI/MCP 审批开关状态。" />;
   }
   if (settingsQuery.isError) {
     return (
@@ -52,8 +52,8 @@ export const ApprovalsSettingsPage: React.FC = () => {
 
   return (
     <SettingsSection
-      title="CLI 审批开关"
-      description="开启表示 CLI 的对应操作会先进入审批队列；关闭后直接写入。修改后只提交发生变化的开关。"
+      title="CLI/MCP 审批开关"
+      description="开启表示 CLI/MCP 的对应操作会先进入审批队列；关闭后直接写入。修改后只提交发生变化的开关。"
       actions={
         <Button type="button" isLoading={isSubmitting} disabled={!canSave} onClick={save}>
           保存审批开关

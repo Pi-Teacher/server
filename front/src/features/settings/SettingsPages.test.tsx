@@ -335,11 +335,11 @@ describe('系统设置 - 通用页', () => {
 describe('审批开关控制页', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('渲染 14 个 CLI 审批开关并按分组展示', async () => {
+  it('渲染 14 个 CLI/MCP 审批开关并按分组展示', async () => {
     installSettingsMock();
     renderAt('/approval-switches');
 
-    await screen.findByRole('switch', { name: 'CLI 新建 Card 需要审批' });
+    await screen.findByRole('switch', { name: 'CLI/MCP 新建卡片需要审批' });
     expect(screen.getAllByRole('switch')).toHaveLength(14);
     expect(screen.getByText('Glossary')).toBeInTheDocument();
     expect(screen.getByText('用户画像')).toBeInTheDocument();
@@ -357,7 +357,7 @@ describe('审批开关控制页', () => {
     const saveButton = await screen.findByRole('button', { name: '保存审批开关' });
     expect(saveButton).toBeDisabled();
 
-    await userEvent.click(screen.getByRole('switch', { name: 'CLI 合并 Card 需要审批' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'CLI/MCP 合并 Card 需要审批' }));
     await userEvent.click(saveButton);
 
     await waitFor(() => expect(settingsPatchCalls()).toHaveLength(1));
@@ -381,7 +381,7 @@ describe('审批开关控制页', () => {
     });
 
     renderAt('/approval-switches');
-    const toggle = await screen.findByRole('switch', { name: 'CLI 新建 Card 需要审批' });
+    const toggle = await screen.findByRole('switch', { name: 'CLI/MCP 新建卡片需要审批' });
     await userEvent.click(toggle);
     const saveButton = screen.getByRole('button', { name: '保存审批开关' });
     await userEvent.click(saveButton);
